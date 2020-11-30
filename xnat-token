@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+warn() {
+  echo "$@" 1>&2
+}
+
+usage() {
+  cat <<EOF
+xnat-token: Generates a new user token for XNAT
+
+USAGE
+  xnat-token [OPTIONS]
+
+OPTIONS
+  -d    Connect to development XNAT
+  -h    Displays this help message
+  -u    Username for XNAT
+
+EXAMPLES
+  xnat-token -u broarr
+
+NOTES
+  XNAT tokens live for 48 hours before they're invalidated. 
+
+EOF
+}
+
+main() {
+  local url='https://bnc.brown.edu/xnat'
+  local username=''
+  local password=''
+  local token=''
+  local alias=''
+  local secret=''
+
+  while getopts ":dhu:" opt; do
+    case "${opt}" in
+      d)
+        url="${url}-dev"
+        ;;
+      h)
+        usage; exit 0
+        ;;
+      u)
+        username="${OPTARG}"
+        ;;
+      \?)
+        warn "Invalid option: -${OPTARG}"
+        exit 1
+        ;;
+      :)
+        warn "Invalid option: -${OPTARG} requires an argument"
+        exit 1
+        ;;
+    esac
+  done
+
+  echo "Connecting to ${url}"
+
+  if [ -z "${username}" ]; then
+    echo -n "username: "
+    read -r username
+  fi
+
+  echo -n "password: "
+  read -sr password
+  echo
+
+  url="${url}/data/services/tokens/issue"
+  token="$(curl -s -u "${username}:${password}" "${url}" )"
+
+  # NOTE (BNR): Normally I'd be using jq for this, but jq is not available in
+  #             oscar. Instead I stick to UNIX tools that should be available
+  #             on every POSIX compliant machine.
+  alias="$(echo "${token}" | sed -n 's/.*"alias":"\([^"]*\)".*/\1/p')"
+  secret="$(echo "${token}" | sed -n 's/.*"secret":"\([^"]*\)".*/\1/p')"
+
+  cat <<EOF
+
+
+The following token will be valid for 48 hours
+Use \$XNAT_TOKEN in place of username and \$XNAT_SECRET in place of password
+
+-------------------------------------------------------------------------------
+
+export XNAT_TOKEN=${alias}
+export XNAT_SECRET=${secret}
+
+-------------------------------------------------------------------------------
+
+EOF
+}
+
+main "$@"

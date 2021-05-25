@@ -27,7 +27,7 @@ EOF
 }
 
 main() {
-  local url='https://bnc.brown.edu/xnat'
+  local url='https://xnat.bnc.brown.edu'
   local username=''
   local password=''
   local token=''
@@ -37,7 +37,7 @@ main() {
   while getopts ":dhu:" opt; do
     case "${opt}" in
       d)
-        url="${url}-dev"
+        url="https://qa-xnat.bnc.brown.edu"
         ;;
       h)
         usage; exit 0

@@ -82,11 +82,31 @@ main() {
 The following token will be valid for 48 hours
 Use \$XNAT_TOKEN in place of username and \$XNAT_SECRET in place of password
 
+If you are using an interact session then you will need to export this variables 
+
+
 -------------------------------------------------------------------------------
 
 export XNAT_TOKEN=${alias}
 export XNAT_SECRET=${secret}
 
+or 
+
+export XNAT_USER=${alias}
+export XNAT_PASSWORD=${secret}
+-------------------------------------------------------------------------------
+
+If you are using an sbatch script, then you can define the variables in your script. For example
+
+-------------------------------------------------------------------------------
+
+XNAT_TOKEN=${alias}
+XNAT_SECRET=${secret}
+
+or 
+
+XNAT_USER=${alias}
+XNAT_PASSWORD=${secret}
 -------------------------------------------------------------------------------
 
 EOF

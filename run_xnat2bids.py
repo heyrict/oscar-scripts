@@ -1,10 +1,10 @@
-from toml import load
-import datetime
-import subprocess, shlex
-import os
-import glob
 from getpass import getpass
+import glob
+import os
+import shlex
 import shutil
+import subprocess
+from toml import load
 
 # Load config file into dictionary
 arglist = load('x2b_config.toml')

@@ -1,3 +1,4 @@
+import argparse
 from getpass import getpass
 import glob
 import os
@@ -6,8 +7,21 @@ import shutil
 import subprocess
 from toml import load
 
-# Load config file into dictionary
-arglist = load('x2b_config.toml')
+# Instantiate argument parser
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", help="path to user config")
+args = parser.parse_args()
+
+# Load default config file into dictionary
+default_params = load('/gpfs/data/bnc/scripts/x2b_config.toml')
+
+# Set arglist. If user provides config, merge dictionaries.
+if args.config is None:
+    arglist = default_params
+else:
+    user_params = load(args.config)
+    default_params.update(user_params)
+    arglist = user_params
 
 # Extract arglist from dictionary
 for key in arglist:

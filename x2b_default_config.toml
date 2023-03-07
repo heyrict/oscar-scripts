@@ -2,23 +2,22 @@
 time = "04:00:00"
 mem = 16000
 nodes = 1
-cpus = 2
-job = "xnat2bids"
-output = "../logs/%J.txt"
-email = "ford_mcdonald@brown.edu"
+cpus-per-task = 2
+job-name = "xnat2bids"
+output = "./logs/%J.txt"
+mail-user = "ford_mcdonald@brown.edu"
+mail-type = "ALL"
 
 [xnat2bids-args]
-data_dir = "/gpfs/data/bnc"
-bids_root = ""
-version = ""
 session = "XNAT_E00114"
+bids_root = "/gpfs/data/bnc/shared/bids-export/"
+data_dir = "/gpfs/data/bnc"
+version = ""
 bids_root_dir=""
 host="https://xnat.bnc.brown.edu"
-session_suffix=-1
+session-suffix=-1
 bidsmap_file=""
 includeseq=[]
 skipseq=[]
-log_id=""
-verbose=""
-overwrite="False"
-cleanup=""
+verbose=0
+overwrite=false

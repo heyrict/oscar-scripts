@@ -69,7 +69,7 @@ def main():
     args = parser.parse_args()
 
     # Load default config file into dictionary
-    default_params = load('/gpfs/data/bnc/shared/scripts/fmcdona4/oscar-scripts/x2b_default_config.toml')
+    default_params = load('/gpfs/data/bnc/scripts/x2b_default_config.toml')
 
     # Set arglist. If user provides config, merge dictionaries.
     if args.config is None:

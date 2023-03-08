@@ -5,9 +5,11 @@ nodes = 1
 cpus-per-task = 2
 job-name = "xnat2bids"
 output = "/gpfs/data/bnc/scratch/logs/%J.txt"
+mail-user = "ford_mcdonald@brown.edu"
+mail-type = "ALL"
 
 [xnat2bids-args]
-session = "XNAT_E00080"
+session = "XNAT_E00152"
 bids_root = "/gpfs/data/bnc/shared/bids-export/"
 version = ""
 bids_root_dir=""
@@ -17,4 +19,4 @@ bidsmap_file=""
 includeseq=[]
 skipseq=[]
 verbose=0
-overwrite=false
+overwrite=true

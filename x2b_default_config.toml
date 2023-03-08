@@ -12,9 +12,5 @@ bids_root = "/gpfs/data/bnc/shared/bids-export/"
 version = ""
 bids_root_dir=""
 host="https://xnat.bnc.brown.edu"
-session-suffix=-1
-bidsmap_file=""
-includeseq=[]
-skipseq=[]
-verbose=0
-overwrite=false
+includeseq=[1]
+

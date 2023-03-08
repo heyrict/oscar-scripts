@@ -1,22 +1,18 @@
 [slurm-args]
-time = "04:00:00"
-mem = 16000
-nodes = 1
-cpus-per-task = 2
+time = "01:00:00"
+mem = 8000
+nodes = 2
 job-name = "xnat2bids"
 output = "/gpfs/data/bnc/scratch/logs/%J.txt"
-mail-user = "ford_mcdonald@brown.edu"
+mail-user = "example-user@brown.edu"
 mail-type = "ALL"
 
 [xnat2bids-args]
-session = "XNAT_E00152"
-bids_root = "/gpfs/data/bnc/shared/bids-export/"
+session = "XNAT_E00080"
 version = ""
 bids_root_dir=""
+bids_root = "/gpfs/data/bnc/shared/bids-export/"
 host="https://xnat.bnc.brown.edu"
-session-suffix=-1
-bidsmap_file=""
-includeseq=[]
-skipseq=[]
-verbose=0
+bidsmap-file=""
+includeseq=[1]
 overwrite=true

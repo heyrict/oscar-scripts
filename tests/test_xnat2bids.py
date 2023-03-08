@@ -14,7 +14,8 @@ def test_xnat2bids():
     'XNAT_E00152', 
     '/gpfs/data/bnc/shared/bids-export/test_user', 
     '--host https://xnat.bnc.brown.edu', 
-    '--session-suffix -1', \
+    '--session-suffix -1', 
+    '--bidsmap-file /gpfs/data/bnc/shared/scripts/fmcdona4/bidsmap.json',
     '--includeseq 1 --includeseq 2', 
     '--skipseq 3', 
     '--overwrite']
@@ -27,15 +28,20 @@ def test_xnat2bids():
         '--cpus-per-task 2', 
         '--job-name xnat2bids', 
         '--output /gpfs/data/bnc/scratch/logs/%J.txt', 
-        '--mail-user ford_mcdonald@brown.edu', 
+        '--mail-user example@brown.edu', 
         '--mail-type ALL']
 
+    bindings_validation_set = [
+        "/gpfs/data/bnc/shared/bids-export/test_user",
+        "/gpfs/data/bnc/shared/scripts/fmcdona4/bidsmap.json"
+    ]
+
     # Run compileArgumentList()
-    x2b_param_list, slurm_param_list = compileArgumentList(test_params, user)
+    x2b_param_list, slurm_param_list, bindings = compileArgumentList(test_params, user)
 
     assert x2b_param_list == x2b_validation_set
     assert slurm_param_list == slurm_validation_set
-
+    assert bindings == bindings_validation_set
 
 if __name__ == "__main__":
     test_xnat2bids()

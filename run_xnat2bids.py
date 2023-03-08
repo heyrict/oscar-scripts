@@ -1,11 +1,15 @@
 import argparse
 from getpass import getpass
 import glob
+import logging
 import os
 import shlex
 import shutil
 import subprocess
 from toml import load
+
+
+logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 
 def extractParams(param, value):
     arg = []
@@ -13,11 +17,11 @@ def extractParams(param, value):
         arg.append(f"--{param} {v}")
     return ' '.join(arg)
 
-
 def compileArgumentList(arg_dict, user):
     """Create command line argument list from TOML dictionary."""
     x2b_param_list = []
     slurm_param_list = []
+    bindings = []
 
     param_lists = ["includeseq", "skipseq"]
 
@@ -33,10 +37,12 @@ def compileArgumentList(arg_dict, user):
                     # Set {bids_root} as second parameter
                     elif param == "bids_root":
                         arg = f"/gpfs/data/bnc/shared/bids-export/{user}"
+                        bindings.append(arg)
                         x2b_param_list.insert(1, arg)
-                    # Skip data_dir. Not a parameter to xnat2bids
-                    elif param == "data_dir":
-                        continue
+                    elif param == "bidsmap-file":
+                        arg = f"--{param} {value}"
+                        bindings.append(value)
+                        x2b_param_list.append(arg)
                     # If verbose is equal to 1, set flag.
                     elif param == "verbose":
                         arg = f"--{param}"
@@ -60,7 +66,7 @@ def compileArgumentList(arg_dict, user):
                     arg = f"--{param} {value}"
                     slurm_param_list.append(arg)
 
-    return x2b_param_list, slurm_param_list
+    return x2b_param_list, slurm_param_list, bindings
 
 def main():
     # Instantiate argument parserß
@@ -69,7 +75,7 @@ def main():
     args = parser.parse_args()
 
     # Load default config file into dictionary
-    default_params = load('/gpfs/data/bnc/scripts/x2b_default_config.toml')
+    default_params = load('/gpfs/data/bnc/shared/scripts/fmcdona4/oscar-scripts/x2b_default_config.toml')
 
     # Set arglist. If user provides config, merge dictionaries.
     if args.config is None:
@@ -84,7 +90,7 @@ def main():
     password = getpass('Enter Password: ')
 
     # Fetch compiled xnat2bids abd slurm parameter lists
-    x2b_param_list, slurm_param_list, user = compileArgumentList(arglist, user)
+    x2b_param_list, slurm_param_list, bindings = compileArgumentList(arglist, user)
 
     # Insert username and password into x2b_param_list
     x2b_param_list.insert(2, f"--user {user}")
@@ -103,21 +109,21 @@ def main():
     if not (os.path.exists(os.path.dirname(output))):
         os.mkdir(os.path.dirname(output))
 
-    # Display formatted command to user
-    new_line = '\n'
-    print(f"\033[1mRunning xnat2bids:\033[0m\n"
-      f"\033[1m----------------------------------------\033[0m\n"
-      f"\033[1msrun\033[0m      \n{new_line.join(slurm_param_list)} \n\n"
-      f"\033[1msingularity exec --contain -B /gpfs/data/bnc {simg}\033[0m \n\n"
-      f"\033[1mxnat2bids\033[0m     \n{new_line.join(x2b_param_list)}"
-      f"\033[1m----------------------------------------\033[0m")
+    # Compile bindings into formated string
+    bindings_str = ' '.join(f"-B {path}" for path in bindings)
 
-    # Run xnat2bids via srun
-    subprocess.run(shlex.split(
-        f"srun {' '.join(slurm_param_list)} \
-        singularity exec --contain -B /gpfs/data/bnc {simg} \
-        xnat2bids {' '.join(x2b_param_list)}"
-    ))
+    # Process command string for SRUN
+    srun_cmd = shlex.split(f"srun {' '.join(slurm_param_list)} \
+        singularity exec --no-home {bindings_str} {simg} \
+        xnat2bids {' '.join(x2b_param_list)}")
+
+    logging.debug("Running xnat2bids")
+    logging.debug("-------------------------------------")
+    logging.debug("Command Input: %s", srun_cmd)
+    logging.debug("-------------------------------------")
+    
+    # Run xnat2bids
+    subprocess.run(srun_cmd)
 
 if __name__ == "__main__":
     main()

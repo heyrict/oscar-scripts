@@ -5,7 +5,7 @@ nodes = 1
 cpus-per-task = 2
 job-name = "xnat2bids"
 output = "/gpfs/data/bnc/scratch/logs/%J.txt"
-mail-user = "ford_mcdonald@brown.edu"
+mail-user = "example-user@brown.edu"
 mail-type = "ALL"
 
 [xnat2bids-args]

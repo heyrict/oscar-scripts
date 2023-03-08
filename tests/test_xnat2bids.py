@@ -28,7 +28,7 @@ def test_xnat2bids():
         '--cpus-per-task 2', 
         '--job-name xnat2bids', 
         '--output /gpfs/data/bnc/scratch/logs/%J.txt', 
-        '--mail-user example@brown.edu', 
+        '--mail-user example-user@brown.edu', 
         '--mail-type ALL']
 
     bindings_validation_set = [

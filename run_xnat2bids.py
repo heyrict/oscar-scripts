@@ -3,6 +3,7 @@ from getpass import getpass
 import glob
 import logging
 import os
+import pathlib
 import shlex
 import shutil
 import subprocess
@@ -36,7 +37,7 @@ def compileArgumentList(arg_dict, user):
                         x2b_param_list.insert(0,arg)
                     # Set {bids_root} as second parameter
                     elif param == "bids_root":
-                        arg = f"/gpfs/data/bnc/shared/bids-export/{user}"
+                        arg = f"{value}"
                         bindings.append(arg)
                         x2b_param_list.insert(1, arg)
                     elif param == "bidsmap-file":
@@ -75,29 +76,50 @@ def main():
     args = parser.parse_args()
 
     # Load default config file into dictionary
-    default_params = load('/gpfs/data/bnc/shared/scripts/fmcdona4/oscar-scripts/x2b_default_config.toml')
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    default_params = load(f'{script_dir}/x2b_default_config.toml')
 
     # Set arglist. If user provides config, merge dictionaries.
     if args.config is None:
         arglist = default_params
     else:
+        # Fetch user and default config file elements
         user_params = load(args.config)
-        default_params.update(user_params)
-        arglist = user_params
+        user_slurm = user_params['slurm-args']
+        user_x2b = user_params['xnat2bids-args']
+        default_slurm = default_params['slurm-args']
+        default_x2b = default_params['xnat2bids-args']
+
+        # Update default config with user provided parameters
+        default_slurm.update(user_slurm)
+        default_x2b.update(user_x2b)
+
+        # Assemble final argument list 
+        merged_dict = {}
+        merged_dict['slurm-args'] = default_slurm
+        merged_dict['xnat2bids-args'] = default_x2b
+
+        arglist = merged_dict
 
     # Fetch user credentials 
     user = input('Enter Username: ')
     password = getpass('Enter Password: ')
 
-    # Fetch compiled xnat2bids abd slurm parameter lists
+    # Fetch compiled xnat2bids and slurm parameter lists
     x2b_param_list, slurm_param_list, bindings = compileArgumentList(arglist, user)
+
+    logging.debug("Argument Lists")
+    logging.debug("-------------------------------------")
+    logging.debug("xnat2bids: %s", x2b_param_list)
+    logging.debug("slurm: %s", slurm_param_list)
+    logging.debug("-------------------------------------")
 
     # Insert username and password into x2b_param_list
     x2b_param_list.insert(2, f"--user {user}")
     x2b_param_list.insert(3, f"--pass {password}")
 
     # Fetch latest version if not provided
-    if(arglist['xnat2bids-args']['version'] == ""):
+    if not ('version' in arglist['xnat2bids-args']):
         list_of_versions = glob.glob('/gpfs/data/bnc/simgs/brownbnc/*') 
         latest_version = max(list_of_versions, key=os.path.getctime)
         version = latest_version.split('-')[-1].replace('.sif', '')
@@ -105,9 +127,23 @@ def main():
     # Define singularity image 
     simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-    output = arglist['slurm-args']['output']
+    # Define output for logs
+    if not ('output' in arglist['slurm-args']):
+        output = f"/users/{user}/logs/%J.txt"
+        arg = f"--output {output}"
+        slurm_param_list.append(arg)
+
     if not (os.path.exists(os.path.dirname(output))):
         os.mkdir(os.path.dirname(output))
+
+    # Define bids root directory
+    if not ('bids_root' in arglist['xnat2bids-args']):
+        bids_root = f"/users/{user}/bids-export/"
+        x2b_param_list.insert(1, bids_root)
+        bindings.append(bids_root)
+
+    if not (os.path.exists(os.path.dirname(bids_root))):
+        os.mkdir(os.path.dirname(bids_root))
 
     # Compile bindings into formated string
     bindings_str = ' '.join(f"-B {path}" for path in bindings)

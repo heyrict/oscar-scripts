@@ -4,13 +4,9 @@ mem = 16000
 nodes = 1
 cpus-per-task = 2
 job-name = "xnat2bids"
-output = "/gpfs/data/bnc/scratch/logs/%J.txt"
 
 [xnat2bids-args]
 session = "XNAT_E00080"
-bids_root = "/gpfs/data/bnc/shared/bids-export/"
-version = ""
-bids_root_dir=""
 host="https://xnat.bnc.brown.edu"
 includeseq=[1]
 

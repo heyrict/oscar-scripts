@@ -1,4 +1,5 @@
 import argparse
+import copy
 from getpass import getpass
 import glob
 import logging
@@ -18,55 +19,90 @@ def extractParams(param, value):
         arg.append(f"--{param} {v}")
     return ' '.join(arg)
 
-def compileArgumentList(arg_dict, user):
+def mergeConfigFiles(user_cfg, default_cfg):
+
+        user_slurm = user_cfg['slurm-args']
+        user_x2b = user_cfg['xnat2bids-args']
+        default_slurm = default_cfg['slurm-args']
+        default_x2b = default_cfg['xnat2bids-args']
+
+        # Update default config with user provided parameters
+        default_slurm.update(user_slurm)
+        default_x2b.update(user_x2b)
+
+        # Assemble final argument list 
+        merged_dict = {}
+        merged_dict['slurm-args'] = default_slurm
+        merged_dict['xnat2bids-args'] = default_x2b
+
+        # Add session
+        for key in user_cfg.keys():
+            if key == 'slurm-args' or key == 'xnat2bids-args':
+                continue
+            merged_dict[key] = user_cfg[key]
+
+        return merged_dict
+
+def compileX2BArgList(xnat2bids_dict, session):
+        x2b_param_list = []
+        param_lists = ["includeseq", "skipseq"]
+        
+        for param, value in xnat2bids_dict.items():
+            if value != "" and value is not None:
+                # Set {session} as first parameter
+                if param == "sessions":
+                    arg = f"{value[session]}"
+                    x2b_param_list.insert(0,arg)
+                # Set {bids_root} as second parameter
+                elif param == "bids_root":
+                    arg = f"{value}"
+                    bindings.append(arg)
+                    x2b_param_list.insert(1, arg)
+                elif param == "bidsmap-file":
+                    arg = f"--{param} {value}"
+                    bindings.append(value)
+                    x2b_param_list.append(arg)
+                # If verbose is equal to 1, set flag.
+                elif param == "verbose":
+                    arg = f"--{param}"
+                    for i in range(value):
+                        x2b_param_list.append(arg)
+                # If overwrite is equal to true, set flag.
+                elif param == "overwrite":
+                    arg = f"--{param}"
+                    if value == True: x2b_param_list.append(arg) 
+                # Extract parameters from include / skip lists
+                elif param in param_lists:
+                    arg = extractParams(param, value)
+                    x2b_param_list.append(arg)
+                # Other arguments follow --param value format.
+                else:
+                    arg = f"--{param} {value}"
+                    x2b_param_list.append(arg)
+
+        return x2b_param_list
+
+def compileArgumentList(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
-    x2b_param_list = []
+    arg_dict_copy = copy.deepcopy(arg_dict) 
+
     slurm_param_list = []
     bindings = []
-
-    param_lists = ["includeseq", "skipseq"]
-
     # Compile list of appended arguments
-    for section_name, section_dict in arg_dict.items():
+    x2b_param_dict = {}
+    for section_name, section_dict in arg_dict_copy.items():
         if section_name == "xnat2bids-args":
-            for param, value in section_dict.items():
-                if value != "" and value is not None:
-                    # Set {session} as first parameter
-                    if param == "session":
-                        arg = f"{value}"
-                        x2b_param_list.insert(0,arg)
-                    # Set {bids_root} as second parameter
-                    elif param == "bids_root":
-                        arg = f"{value}"
-                        bindings.append(arg)
-                        x2b_param_list.insert(1, arg)
-                    elif param == "bidsmap-file":
-                        arg = f"--{param} {value}"
-                        bindings.append(value)
-                        x2b_param_list.append(arg)
-                    # If verbose is equal to 1, set flag.
-                    elif param == "verbose":
-                        arg = f"--{param}"
-                        if value == 1: x2b_param_list.append(arg)
-                    # If overwrite is equal to true, set flag.
-                    elif param == "overwrite":
-                        arg = f"--{param}"
-                        if value == True: x2b_param_list.append(arg) 
-                    # Extract parameters from include / skip lists
-                    elif param in param_lists:
-                        arg = extractParams(param, value)
-                        x2b_param_list.append(arg)
-                    # Other arguments follow --param value format.
-                    else:
-                        arg = f"--{param} {value}"
-                        x2b_param_list.append(arg)
-
+            x2b_param_dict = section_dict
         elif section_name == "slurm-args":
             for param, value in section_dict.items():
                 if value != "" and value is not None:
                     arg = f"--{param} {value}"
                     slurm_param_list.append(arg)
-
+        else:
+            if section_name == x2b_param_dict['sessions'][session]:
+                x2b_param_dict.update(section_dict)
+    
+    x2b_param_list = compileX2BArgList(x2b_param_dict, session)
     return x2b_param_list, slurm_param_list, bindings
 
 def main():
@@ -83,83 +119,82 @@ def main():
     if args.config is None:
         arglist = default_params
     else:
-        # Fetch user and default config file elements
+        # Load user configuration
         user_params = load(args.config)
-        user_slurm = user_params['slurm-args']
-        user_x2b = user_params['xnat2bids-args']
-        default_slurm = default_params['slurm-args']
-        default_x2b = default_params['xnat2bids-args']
 
-        # Update default config with user provided parameters
-        default_slurm.update(user_slurm)
-        default_x2b.update(user_x2b)
-
-        # Assemble final argument list 
-        merged_dict = {}
-        merged_dict['slurm-args'] = default_slurm
-        merged_dict['xnat2bids-args'] = default_x2b
-
-        arglist = merged_dict
+        # Merge with default configuration
+        arglist = mergeConfigFiles(user_params, default_params)
 
     # Fetch user credentials 
     user = input('Enter Username: ')
     password = getpass('Enter Password: ')
 
-    # Fetch compiled xnat2bids and slurm parameter lists
-    x2b_param_list, slurm_param_list, bindings = compileArgumentList(arglist, user)
+    # Fetch number of sessions to process
+    num_sessions = len(arglist['xnat2bids-args']['sessions'])
 
-    logging.debug("Argument Lists")
-    logging.debug("-------------------------------------")
-    logging.debug("xnat2bids: %s", x2b_param_list)
-    logging.debug("slurm: %s", slurm_param_list)
-    logging.debug("-------------------------------------")
+    # Assemble parameter lists per session
+    config_list = []
+    for session in range(num_sessions):
+        # Fetch compiled xnat2bids and slurm parameter lists
+        x2b_param_list, slurm_param_list, bindings = compileArgumentList(session, arglist, user)
 
-    # Insert username and password into x2b_param_list
-    x2b_param_list.insert(2, f"--user {user}")
-    x2b_param_list.insert(3, f"--pass {password}")
+        # Insert username and password into x2b_param_list
+        x2b_param_list.insert(2, f"--user {user}")
+        x2b_param_list.insert(3, f"--pass {password}")
 
-    # Fetch latest version if not provided
-    if not ('version' in arglist['xnat2bids-args']):
-        list_of_versions = glob.glob('/gpfs/data/bnc/simgs/brownbnc/*') 
-        latest_version = max(list_of_versions, key=os.path.getctime)
-        version = latest_version.split('-')[-1].replace('.sif', '')
+        # Fetch latest version if not provided
+        if not ('version' in arglist['xnat2bids-args']):
+            list_of_versions = glob.glob('/gpfs/data/bnc/simgs/brownbnc/*') 
+            latest_version = max(list_of_versions, key=os.path.getctime)
+            version = latest_version.split('-')[-1].replace('.sif', '')
 
-    # Define singularity image 
-    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+        # Define singularity image 
+        simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-    # Define output for logs
-    if not ('output' in arglist['slurm-args']):
-        output = f"/users/{user}/logs/%J.txt"
-        arg = f"--output {output}"
-        slurm_param_list.append(arg)
+        # Define output for logs
+        if not ('output' in arglist['slurm-args']):
+            output = f"/users/{user}/logs/%x-%J.txt"
+            arg = f"--output {output}"
+            slurm_param_list.append(arg)
 
-    if not (os.path.exists(os.path.dirname(output))):
-        os.mkdir(os.path.dirname(output))
+        if not (os.path.exists(os.path.dirname(output))):
+            os.mkdir(os.path.dirname(output))
 
-    # Define bids root directory
-    if not ('bids_root' in arglist['xnat2bids-args']):
-        bids_root = f"/users/{user}/bids-export/"
-        x2b_param_list.insert(1, bids_root)
-        bindings.append(bids_root)
+        # Define bids root directory
+        if not ('bids_root' in arglist['xnat2bids-args']):
+            bids_root = f"/users/{user}/bids-export/"
+            x2b_param_list.insert(1, bids_root)
+            bindings.append(bids_root)
 
-    if not (os.path.exists(os.path.dirname(bids_root))):
-        os.mkdir(os.path.dirname(bids_root))
+        if not (os.path.exists(os.path.dirname(bids_root))):
+            os.mkdir(os.path.dirname(bids_root))  
 
-    # Compile bindings into formated string
-    bindings_str = ' '.join(f"-B {path}" for path in bindings)
+        config_list.append((x2b_param_list, slurm_param_list, bindings))
+        
 
-    # Process command string for SRUN
-    srun_cmd = shlex.split(f"srun {' '.join(slurm_param_list)} \
-        singularity exec --no-home {bindings_str} {simg} \
-        xnat2bids {' '.join(x2b_param_list)}")
+        logging.debug("Argument List for Session: %s", arglist['xnat2bids-args']['sessions'][session])
+        logging.debug("-------------------------------------")
+        logging.debug("xnat2bids: %s", x2b_param_list)
+        logging.debug("slurm: %s", slurm_param_list)
+        logging.debug("-------------------------------------")
 
-    logging.debug("Running xnat2bids")
-    logging.debug("-------------------------------------")
-    logging.debug("Command Input: %s", srun_cmd)
-    logging.debug("-------------------------------------")
-    
-    # Run xnat2bids
-    subprocess.run(srun_cmd)
+
+    for config in config_list:
+        # Compile bindings into formated string
+        bindings_str = ' '.join(f"-B {path}" for path in config[2])
+
+        # Process command string for SRUN
+        srun_cmd = shlex.split(f"srun {' '.join(config[1])} \
+            singularity exec --no-home {bindings_str} {simg} \
+            xnat2bids {' '.join(config[0])}")
+
+        logging.debug("Running xnat2bids")
+        logging.debug("-------------------------------------")
+        logging.debug("Command Input: %s", srun_cmd)
+        logging.debug("-------------------------------------")
+        
+        # Run xnat2bids
+        subprocess.run(srun_cmd)
 
 if __name__ == "__main__":
     main()

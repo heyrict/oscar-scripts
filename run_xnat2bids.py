@@ -195,7 +195,6 @@ async def main():
         logging.debug("-------------------------------------")
 
     # Loop over argument lists for provided sessions.
-    # loop = asyncio.get_event_loop()
     tasks = []
     for args in argument_lists:
         # Compile bindings into formated string
@@ -211,12 +210,9 @@ async def main():
         logging.debug("Command Input: %s", srun_cmd)
         logging.debug("-------------------------------------")
         
-
         # Run xnat2bids asynchronously
         task = asyncio.create_task(run_subprocess(srun_cmd))
         tasks.append(task)
-        # Run xnat2bids
-        #subprocess.run(srun_cmd)
 
     # Wait for all subprocess tasks to complete
     await asyncio.gather(*tasks)

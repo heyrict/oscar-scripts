@@ -13,6 +13,7 @@ from toml import load
 
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 # Define a coroutine function to run subprocess command
 async def run_subprocess(srun_cmd):
@@ -187,7 +188,6 @@ async def main():
         # Store xnat2bids, slurm, and binding paramters as tuple.
         argument_lists.append((x2b_param_list, slurm_param_list, bindings))
         
-
         logging.debug("Argument List for Session: %s", arglist['xnat2bids-args']['sessions'][session])
         logging.debug("-------------------------------------")
         logging.debug("xnat2bids: %s", x2b_param_list)

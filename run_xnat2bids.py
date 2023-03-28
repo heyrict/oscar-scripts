@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import copy
 from getpass import getpass
 import glob
@@ -12,6 +13,12 @@ from toml import load
 
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
+
+# Define a coroutine function to run subprocess command
+async def run_subprocess(srun_cmd):
+    proc = await asyncio.create_subprocess_exec(*srun_cmd)
+    await proc.wait()
+
 
 def extractParams(param, value):
     arg = []
@@ -35,7 +42,7 @@ def mergeConfigFiles(user_cfg, default_cfg):
         merged_dict['slurm-args'] = default_slurm
         merged_dict['xnat2bids-args'] = default_x2b
 
-        # Add session
+        # Add session specific parameter blocks
         for key in user_cfg.keys():
             if key == 'slurm-args' or key == 'xnat2bids-args':
                 continue
@@ -62,7 +69,7 @@ def compileX2BArgList(xnat2bids_dict, session):
                     arg = f"--{param} {value}"
                     bindings.append(value)
                     x2b_param_list.append(arg)
-                # If verbose is equal to 1, set flag.
+                # Set as many verbose flags as specified.
                 elif param == "verbose":
                     arg = f"--{param}"
                     for i in range(value):
@@ -84,6 +91,9 @@ def compileX2BArgList(xnat2bids_dict, session):
 
 def compileArgumentList(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
+
+    # Create copy of dictionary, so as not to update
+    # the original object reference while merging configs.
     arg_dict_copy = copy.deepcopy(arg_dict) 
 
     slurm_param_list = []
@@ -91,21 +101,26 @@ def compileArgumentList(session, arg_dict, user):
     # Compile list of appended arguments
     x2b_param_dict = {}
     for section_name, section_dict in arg_dict_copy.items():
+        # Extract xnat2bids-args from original dictionary
         if section_name == "xnat2bids-args":
             x2b_param_dict = section_dict
+        # Extract slurm-args from original dictionary
         elif section_name == "slurm-args":
             for param, value in section_dict.items():
                 if value != "" and value is not None:
                     arg = f"--{param} {value}"
                     slurm_param_list.append(arg)
         else:
+            # If a session key exist for the current session being 
+            # processed, update final config with session block. 
             if section_name == x2b_param_dict['sessions'][session]:
                 x2b_param_dict.update(section_dict)
     
+    # Transform session config dictionary into argument list.
     x2b_param_list = compileX2BArgList(x2b_param_dict, session)
     return x2b_param_list, slurm_param_list, bindings
 
-def main():
+async def main():
     # Instantiate argument parserß
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", help="path to user config")
@@ -133,7 +148,7 @@ def main():
     num_sessions = len(arglist['xnat2bids-args']['sessions'])
 
     # Assemble parameter lists per session
-    config_list = []
+    argument_lists = []
     for session in range(num_sessions):
         # Fetch compiled xnat2bids and slurm parameter lists
         x2b_param_list, slurm_param_list, bindings = compileArgumentList(session, arglist, user)
@@ -169,7 +184,8 @@ def main():
         if not (os.path.exists(os.path.dirname(bids_root))):
             os.mkdir(os.path.dirname(bids_root))  
 
-        config_list.append((x2b_param_list, slurm_param_list, bindings))
+        # Store xnat2bids, slurm, and binding paramters as tuple.
+        argument_lists.append((x2b_param_list, slurm_param_list, bindings))
         
 
         logging.debug("Argument List for Session: %s", arglist['xnat2bids-args']['sessions'][session])
@@ -178,23 +194,32 @@ def main():
         logging.debug("slurm: %s", slurm_param_list)
         logging.debug("-------------------------------------")
 
-
-    for config in config_list:
+    # Loop over argument lists for provided sessions.
+    # loop = asyncio.get_event_loop()
+    tasks = []
+    for args in argument_lists:
         # Compile bindings into formated string
-        bindings_str = ' '.join(f"-B {path}" for path in config[2])
+        bindings_str = ' '.join(f"-B {path}" for path in args[2])
 
         # Process command string for SRUN
-        srun_cmd = shlex.split(f"srun {' '.join(config[1])} \
+        srun_cmd = shlex.split(f"srun {' '.join(args[1])} \
             singularity exec --no-home {bindings_str} {simg} \
-            xnat2bids {' '.join(config[0])}")
+            xnat2bids {' '.join(args[0])}")
 
         logging.debug("Running xnat2bids")
         logging.debug("-------------------------------------")
         logging.debug("Command Input: %s", srun_cmd)
         logging.debug("-------------------------------------")
         
+
+        # Run xnat2bids asynchronously
+        task = asyncio.create_task(run_subprocess(srun_cmd))
+        tasks.append(task)
         # Run xnat2bids
-        subprocess.run(srun_cmd)
+        #subprocess.run(srun_cmd)
+
+    # Wait for all subprocess tasks to complete
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

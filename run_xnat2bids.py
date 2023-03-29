@@ -151,6 +151,9 @@ async def main():
     # Assemble parameter lists per session
     argument_lists = []
     for session in range(num_sessions):
+
+        currentSession = arglist['xnat2bids-args']['sessions'][session]
+
         # Fetch compiled xnat2bids and slurm parameter lists
         x2b_param_list, slurm_param_list, bindings = compileArgumentList(session, arglist, user)
 
@@ -169,7 +172,7 @@ async def main():
 
         # Define output for logs
         if not ('output' in arglist['slurm-args']):
-            output = f"/users/{user}/logs/%x-%J.txt"
+            output = f"/users/{user}/logs/%x-{currentSession}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
 
@@ -188,7 +191,7 @@ async def main():
         # Store xnat2bids, slurm, and binding paramters as tuple.
         argument_lists.append((x2b_param_list, slurm_param_list, bindings))
         
-        logging.debug("Argument List for Session: %s", arglist['xnat2bids-args']['sessions'][session])
+        logging.debug("Argument List for Session: %s", currentSession)
         logging.debug("-------------------------------------")
         logging.debug("xnat2bids: %s", x2b_param_list)
         logging.debug("slurm: %s", slurm_param_list)

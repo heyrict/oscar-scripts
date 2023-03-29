@@ -17,8 +17,8 @@ logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 # Define a coroutine function to run subprocess command
 async def run_subprocess(srun_cmd):
-    proc = await asyncio.create_subprocess_exec(*srun_cmd)
-    await proc.wait()
+    await asyncio.create_subprocess_exec(*srun_cmd)
+   
 
 
 def extractParams(param, value):
@@ -201,11 +201,11 @@ async def main():
         bindings_str = ' '.join(f"-B {path}" for path in args[2])
 
         # Process command string for SRUN
-        srun_cmd = shlex.split(f"srun {' '.join(args[1])} \
+        srun_cmd = shlex.split(f"srun -Q {' '.join(args[1])} \
             singularity exec --no-home {bindings_str} {simg} \
             xnat2bids {' '.join(args[0])}")
 
-        logging.debug("Running xnat2bids")
+        logging.debug("Running xnat2bids %s", args[0][0])
         logging.debug("-------------------------------------")
         logging.debug("Command Input: %s", srun_cmd)
         logging.debug("-------------------------------------")

@@ -197,6 +197,7 @@ async def main():
         # Store xnat2bids, slurm, and binding paramters as tuple.
         argument_lists.append((x2b_param_list, slurm_param_list, bindings))
 
+        # Set logging level per session verbosity. 
         setLoggingLevel(x2b_param_list)
 
         logging.debug({
@@ -218,6 +219,7 @@ async def main():
             singularity exec --no-home {bindings_str} {simg} \
             xnat2bids {' '.join(args[0])}")
 
+        # Set logging level per session verbosity. 
         setLoggingLevel(args[0])
 
         logging.debug({

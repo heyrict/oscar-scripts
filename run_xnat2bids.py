@@ -12,15 +12,9 @@ import shutil
 import subprocess
 from toml import load
 
-
-# TODO: Add user friendly logging on job launch 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
-
-# Define a coroutine function to run subprocess command
-async def run_subprocess(srun_cmd):
-    await asyncio.create_subprocess_exec(*srun_cmd)
    
 def setLoggingLevel(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:

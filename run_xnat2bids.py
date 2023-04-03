@@ -143,7 +143,7 @@ def main():
         bindings.append(bids_root)
 
     if not (os.path.exists(os.path.dirname(bids_root))):
-        os.mkdir(os.path.dirname(bids_root))
+        os.makedirs(os.path.dirname(bids_root))
 
     # Compile bindings into formated string
     bindings_str = ' '.join(f"-B {path}" for path in bindings)

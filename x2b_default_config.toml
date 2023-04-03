@@ -7,5 +7,4 @@ job-name = "xnat2bids"
 
 [xnat2bids-args]
 host="https://xnat.bnc.brown.edu"
-includeseq=[1]
 

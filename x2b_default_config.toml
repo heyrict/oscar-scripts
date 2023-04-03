@@ -6,7 +6,6 @@ cpus-per-task = 2
 job-name = "xnat2bids"
 
 [xnat2bids-args]
-session = "XNAT_E00080"
 host="https://xnat.bnc.brown.edu"
 includeseq=[1]
 

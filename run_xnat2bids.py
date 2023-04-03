@@ -134,7 +134,7 @@ def main():
         slurm_param_list.append(arg)
 
     if not (os.path.exists(os.path.dirname(output))):
-        os.mkdir(os.path.dirname(output))
+        os.makedirs(os.path.dirname(output))
 
     # Define bids root directory
     if not ('bids_root' in arglist['xnat2bids-args']):

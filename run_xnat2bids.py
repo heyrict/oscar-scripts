@@ -85,6 +85,9 @@ def compileX2BArgList(xnat2bids_dict, session, bindings):
             elif param == "overwrite":
                 arg = f"--{param}"
                 if value == True: x2b_param_list.append(arg) 
+            # If version is specified, continue
+            elif param == "version":
+                continue
             # Extract parameters from include / skip lists
             elif param in param_lists:
                 arg = extractParams(param, value)
@@ -172,6 +175,8 @@ async def main():
         # Fetch latest version if not provided
         if not ('version' in arg_dict['xnat2bids-args']):
             version = fetchLatestVersion()
+        else:
+            version =  arg_dict['xnat2bids-args']['version']
 
         # Define singularity image 
         simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"

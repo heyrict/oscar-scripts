@@ -178,7 +178,7 @@ async def main():
 
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
-            output = f"/gpfs/scratch/%u/logs/%x-{session}-%J.txt"
+            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
 
@@ -190,6 +190,8 @@ async def main():
             bids_root = f"/users/{user}/bids-export/"
             x2b_param_list.insert(1, bids_root)
             bindings.append(bids_root)
+        else:
+            bids_root = x2b_param_list[1]
 
         if not (os.path.exists(os.path.dirname(bids_root))):
             os.mkdir(os.path.dirname(bids_root))  

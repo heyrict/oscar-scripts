@@ -9,6 +9,7 @@ def test_xnat2bids():
     test_params = load("/gpfs/data/bnc/shared/scripts/fmcdona4/oscar-scripts/tests/x2b_test_config.toml")
     user = "test_user"
     session = test_params['xnat2bids-args']['sessions'][0]
+    
     # Initialize validation sets
     x2b_validation_set = [
     'XNAT_E00152', 

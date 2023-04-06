@@ -57,12 +57,12 @@ def mergeConfigFiles(user_cfg, default_cfg):
 
         return merged_dict
 
-def compileX2BArgList(xnat2bids_dict, session):
+def compileX2BArgList(xnat2bids_dict, session, bindings):
         x2b_param_list = []
         param_lists = ["includeseq", "skipseq"]
         
         for param, value in xnat2bids_dict.items():
-            if value == "" and value is  None:
+            if value == "" or value is  None:
                 continue
             # Set {session} as first parameter
             elif param == "sessions":
@@ -125,7 +125,7 @@ def compileArgumentList(session, arg_dict, user):
                 x2b_param_dict.update(section_dict)
     
     # Transform session config dictionary into argument list.
-    x2b_param_list = compileX2BArgList(x2b_param_dict, session)
+    x2b_param_list = compileX2BArgList(x2b_param_dict, session, bindings)
     return x2b_param_list, slurm_param_list, bindings
 
 async def main():
@@ -155,7 +155,7 @@ async def main():
         
 
     # Fetch user credentials 
-    user = input('Enter Username: ')
+    user = input('Enter XNAT Username: ')
     password = getpass('Enter Password: ')
 
     # Assemble parameter lists per session
@@ -178,7 +178,7 @@ async def main():
 
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
-            output = f"/users/{user}/logs/%x-{session}-%J.txt"
+            output = f"/gpfs/scratch/%u/logs/%x-{session}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
 
@@ -236,6 +236,7 @@ async def main():
     await asyncio.gather(*tasks)
 
     logging.info("Launched %d %s", len(tasks), "jobs" if len(tasks) > 1 else "job")
+    logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":
     asyncio.run(main())

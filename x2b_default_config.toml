@@ -1,0 +1,10 @@
+[slurm-args]
+time = "04:00:00"
+mem = 16000
+nodes = 1
+cpus-per-task = 2
+job-name = "xnat2bids"
+
+[xnat2bids-args]
+host="https://xnat.bnc.brown.edu"
+

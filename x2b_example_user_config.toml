@@ -1,0 +1,9 @@
+# Configuring arguments here will override default parameters.
+[slurm-args]
+mail-user = "example-user@brown.edu"
+mail-type = "ALL"
+
+[xnat2bids-args]
+session = "XNAT_E00080"
+includeseq=[1]
+

@@ -4,5 +4,6 @@ mail-user = "example-user@brown.edu"
 mail-type = "ALL"
 
 [xnat2bids-args]
-overwrite=true
+sessions = ["XNAT_E00114"]
+includeseq=[6]
 

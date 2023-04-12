@@ -2,7 +2,7 @@ from toml import load
 import os
 import sys 
 sys.path.append(os.path.abspath("../"))
-from run_xnat2bids import compileArgumentList
+from run_xnat2bids import compile_argument_list
 
 def test_xnat2bids():
     # Load test parameters
@@ -38,7 +38,7 @@ def test_xnat2bids():
     ]
 
     # Run compileArgumentList()
-    x2b_param_list, slurm_param_list, bindings = compileArgumentList(session, test_params, user)
+    x2b_param_list, slurm_param_list, bindings = compile_argument_list(session, test_params, user)
     assert x2b_param_list == x2b_validation_set
     assert slurm_param_list == slurm_validation_set
     assert bindings == bindings_validation_set

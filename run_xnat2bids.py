@@ -16,24 +16,24 @@ logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
    
-def setLoggingLevel(x2b_arglist: list):
+def set_logging_level(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:
         logging.getLogger().setLevel(logging.DEBUG)
     else:
         logging.getLogger().setLevel(logging.INFO)
 
-def fetchLatestVersion():
+def fetch_latest_version():
     list_of_versions = glob.glob('/gpfs/data/bnc/simgs/brownbnc/*') 
     latest_version = max(list_of_versions, key=os.path.getctime)
     return (latest_version.split('-')[-1].replace('.sif', ''))
 
-def extractParams(param, value):
+def extract_params(param, value):
     arg = []
     for v in value:
         arg.append(f"--{param} {v}")
     return ' '.join(arg)
 
-def mergeConfigFiles(user_cfg, default_cfg):
+def merge_config_files(user_cfg, default_cfg):
 
         user_slurm = user_cfg['slurm-args']
         user_x2b = user_cfg['xnat2bids-args']
@@ -57,7 +57,7 @@ def mergeConfigFiles(user_cfg, default_cfg):
 
         return merged_dict
 
-def compileX2BArgList(xnat2bids_dict, session, bindings):
+def compile_x2b_arglist(xnat2bids_dict, session, bindings):
         x2b_param_list = []
         param_lists = ["includeseq", "skipseq"]
         
@@ -90,7 +90,7 @@ def compileX2BArgList(xnat2bids_dict, session, bindings):
                 continue
             # Extract parameters from include / skip lists
             elif param in param_lists:
-                arg = extractParams(param, value)
+                arg = extract_params(param, value)
                 x2b_param_list.append(arg)
             # Other arguments follow --param value format.
             else:
@@ -99,7 +99,7 @@ def compileX2BArgList(xnat2bids_dict, session, bindings):
 
         return x2b_param_list
 
-def compileArgumentList(session, arg_dict, user):
+def compile_argument_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
 
     # Create copy of dictionary, so as not to update
@@ -128,7 +128,7 @@ def compileArgumentList(session, arg_dict, user):
                 x2b_param_dict.update(section_dict)
     
     # Transform session config dictionary into argument list.
-    x2b_param_list = compileX2BArgList(x2b_param_dict, session, bindings)
+    x2b_param_list = compile_x2b_arglist(x2b_param_dict, session, bindings)
     return x2b_param_list, slurm_param_list, bindings
 
 async def main():
@@ -149,11 +149,11 @@ async def main():
         user_params = load(args.config)
 
         # Merge with default configuration
-        arg_dict = mergeConfigFiles(user_params, default_params)
+        arg_dict = merge_config_files(user_params, default_params)
 
     # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
     if 'sessions' not in arg_dict['xnat2bids-args']:
-        sessions_input = input("Enter Session(s) (comma separated): ")
+        sessions_input = input("Enter Session(s) (comma-separated): ")
         arg_dict['xnat2bids-args']['sessions'] = [s.strip() for s in sessions_input.split(',')]
         
 
@@ -166,7 +166,7 @@ async def main():
     for session in arg_dict['xnat2bids-args']['sessions']:
 
         # Fetch compiled xnat2bids and slurm parameter lists
-        x2b_param_list, slurm_param_list, bindings = compileArgumentList(session, arg_dict, user)
+        x2b_param_list, slurm_param_list, bindings = compile_argument_list(session, arg_dict, user)
 
         # Insert username and password into x2b_param_list
         x2b_param_list.insert(2, f"--user {user}")
@@ -174,7 +174,7 @@ async def main():
 
         # Fetch latest version if not provided
         if not ('version' in arg_dict['xnat2bids-args']):
-            version = fetchLatestVersion()
+            version = fetch_latest_version()
         else:
             version =  arg_dict['xnat2bids-args']['version']
 
@@ -184,6 +184,10 @@ async def main():
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
             output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+            arg = f"--output {output}"
+            slurm_param_list.append(arg)
+        else:
+            output = arg_dict['slurm-args']['output']
             arg = f"--output {output}"
             slurm_param_list.append(arg)
 
@@ -205,7 +209,7 @@ async def main():
         argument_lists.append((x2b_param_list, slurm_param_list, bindings))
 
         # Set logging level per session verbosity. 
-        setLoggingLevel(x2b_param_list)
+        set_logging_level(x2b_param_list)
 
         logging.debug({
         "message": "Argument List",
@@ -219,24 +223,31 @@ async def main():
     tasks = []
     for args in argument_lists:
         # Compile bindings into formated string
-        bindings_str = ' '.join(f"-B {path}" for path in args[2])
+        bindings = ' '.join(f"-B {path}" for path in args[2])
+        xnat2bids_options = ' '.join(args[0])
+        slurm_options = ' '.join(args[1])
 
+        # sbatch_bash = f"$(cat <<-EOF #!/bin/sh\n \
+        #     singularity exec --no-home {bindings} {simg} \
+        #     xnat2bids {xnat2bids_options} \n    EOF)"
+  
         # Process command string for SRUN
-        srun_cmd = shlex.split(f"srun -Q {' '.join(args[1])} \
-            singularity exec --no-home {bindings_str} {simg} \
-            xnat2bids {' '.join(args[0])}")
+        sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
+            --wrap \"$(cat << EOF #!/bin/sh\n \
+            apptainer exec --no-home {bindings} {simg}\n \
+            xnat2bids {xnat2bids_options}\nEOF)\"")    
 
         # Set logging level per session verbosity. 
-        setLoggingLevel(args[0])
+        set_logging_level(args[0])
 
         logging.debug({
             "message": "Executing xnat2bids",
             "session": args[0][0],
-            "command": srun_cmd
+            "command": sbatch_cmd
         })
         
         # Run xnat2bids asynchronously
-        task = asyncio.create_task(asyncio.create_subprocess_exec(*srun_cmd))
+        task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_cmd))
         tasks.append(task)
 
     # Wait for all subprocess tasks to complete

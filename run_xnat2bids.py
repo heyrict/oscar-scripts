@@ -224,13 +224,11 @@ async def main():
     for args in argument_lists:
         # Compile bindings into formated string
         bindings = ' '.join(f"-B {path}" for path in args[2])
+
+        # Compilie slurm and xnat2bids args 
         xnat2bids_options = ' '.join(args[0])
         slurm_options = ' '.join(args[1])
 
-        # sbatch_bash = f"$(cat <<-EOF #!/bin/sh\n \
-        #     singularity exec --no-home {bindings} {simg} \
-        #     xnat2bids {xnat2bids_options} \n    EOF)"
-  
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
             --wrap \"$(cat << EOF #!/bin/sh\n \

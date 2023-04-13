@@ -232,9 +232,9 @@ async def main():
         # Build shell script for sbatch
 
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
-            apptainer exec --no-home {bindings} {simg}\n \
+            apptainer exec --no-home {bindings} {simg} \
             xnat2bids {xnat2bids_options}\nEOF\n)\""
-            
+
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
             --wrap {sbatch_script}")    

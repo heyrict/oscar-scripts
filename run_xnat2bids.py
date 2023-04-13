@@ -186,6 +186,8 @@ async def main():
             output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
+        else:
+            output = arg_dict['slurm-args']['output']
 
         if not (os.path.exists(os.path.dirname(output))):
             os.mkdir(os.path.dirname(output))

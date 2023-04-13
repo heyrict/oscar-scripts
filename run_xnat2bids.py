@@ -229,11 +229,15 @@ async def main():
         xnat2bids_options = ' '.join(args[0])
         slurm_options = ' '.join(args[1])
 
+        # Build shell script for sbatch
+
+        sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
+            apptainer exec --no-home {bindings} {simg}\n \
+            xnat2bids {xnat2bids_options}\nEOF\n)\""
+            
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
-            --wrap \"$(cat << EOF #!/bin/sh\n \
-            apptainer exec --no-home {bindings} {simg}\n \
-            xnat2bids {xnat2bids_options}\nEOF)\"")    
+            --wrap {sbatch_script}")    
 
         # Set logging level per session verbosity. 
         set_logging_level(args[0])

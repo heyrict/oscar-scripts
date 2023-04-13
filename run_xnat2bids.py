@@ -188,8 +188,6 @@ async def main():
             slurm_param_list.append(arg)
         else:
             output = arg_dict['slurm-args']['output']
-            arg = f"--output {output}"
-            slurm_param_list.append(arg)
 
         if not (os.path.exists(os.path.dirname(output))):
             os.mkdir(os.path.dirname(output))

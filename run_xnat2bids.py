@@ -209,11 +209,14 @@ async def main():
         # Set logging level per session verbosity. 
         set_logging_level(x2b_param_list)
 
+        # Remove the password parameter from the x2b_param_list
+        x2b_param_list_without_password = [param for param in x2b_param_list if not param.startswith('--pass')]
+
         logging.debug({
         "message": "Argument List",
         "session": session,
          "slurm_param_list": slurm_param_list,
-        "x2b_param_list": x2b_param_list,
+        "x2b_param_list": x2b_param_list_without_password,
 
         })
 
@@ -228,7 +231,6 @@ async def main():
         slurm_options = ' '.join(args[1])
 
         # Build shell script for sbatch
-
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
             apptainer exec --no-home {bindings} {simg} \
             xnat2bids {xnat2bids_options}\nEOF\n)\""
@@ -240,10 +242,30 @@ async def main():
         # Set logging level per session verbosity. 
         set_logging_level(args[0])
 
+        # Remove the password from sbatch command before logging 
+        xnat2bids_options_without_password = []
+        exclude_next_opt = False
+
+        for opt in xnat2bids_options.split():
+            if exclude_next_opt:
+                exclude_next_opt = False
+            elif opt == "--pass":
+                exclude_next_opt = True
+                continue
+            else:
+                xnat2bids_options_without_password.append(opt)
+
+        sbatch_script_without_password = f"\"$(cat << EOF #!/bin/sh\n \
+                                            apptainer exec --no-home {bindings} {simg} \
+                                            xnat2bids {xnat2bids_options_without_password}\nEOF\n)\""
+
+        sbatch_cmd_without_password = shlex.split(f"sbatch -Q {slurm_options} \
+                                                    --wrap {sbatch_script_without_password}")   
+
         logging.debug({
             "message": "Executing xnat2bids",
             "session": args[0][0],
-            "command": sbatch_cmd
+            "command": sbatch_cmd_without_password
         })
         
         # Run xnat2bids asynchronously

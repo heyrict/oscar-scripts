@@ -8,7 +8,7 @@ mail-type = "ALL"
 sessions = [
     "XNAT_E00080", 
     "XNAT_E00114",  
-    "XNAT_E00152",
+    "XNAT_E00152"
     ]
 skipseq=[6]
 overwrite=true

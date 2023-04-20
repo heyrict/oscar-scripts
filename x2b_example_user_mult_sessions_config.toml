@@ -10,17 +10,20 @@ sessions = [
     "XNAT_E00114",  
     "XNAT_E00152",
     ]
+skipseq=[6]
 overwrite=true
 verbose=0
 
 # Define custom parameters for a given session by creating a section 
 # with the Accession identifier with values for specific arguments.
 
-[XNAT_E00152]
-skipseq=[6]
-includeseq=[7,8,9,10,11]
-verbose=1
+[XNAT_E00080]
+includeseq=[19, 21]
 
 [XNAT_E00114]
-skipseq=[6]
+includeseq=[7,8,11,14]
 verbose=2
+
+[XNAT_E00152]
+includeseq=[7,8,9,10,11]
+verbose=1

@@ -255,9 +255,8 @@ async def main():
             else:
                 xnat2bids_options_without_password.append(opt)
 
-        sbatch_script_without_password = f"\"$(cat << EOF #!/bin/sh\n \
-                                            apptainer exec --no-home {bindings} {simg} \
-                                            xnat2bids {xnat2bids_options_without_password}\nEOF\n)\""
+        sbatch_script_without_password = f"apptainer exec --no-home {bindings} {simg} \
+                                            xnat2bids {xnat2bids_options_without_password}"
 
         sbatch_cmd_without_password = shlex.split(f"sbatch -Q {slurm_options} \
                                                     --wrap {sbatch_script_without_password}")   

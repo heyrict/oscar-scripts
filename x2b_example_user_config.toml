@@ -5,5 +5,6 @@ mail-type = "ALL"
 
 [xnat2bids-args]
 sessions = ["XNAT_E00114"]
-includeseq=[6]
+includeseq=[7,10]
+skipseq=[6]
 

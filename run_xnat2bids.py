@@ -85,6 +85,9 @@ def compile_x2b_arglist(xnat2bids_dict, session, bindings):
             elif param == "overwrite":
                 arg = f"--{param}"
                 if value == True: x2b_param_list.append(arg) 
+            elif param == "cleanup":
+                arg = f"--{param}"
+                if value == True: x2b_param_list.append(arg)
             # If version is specified, continue
             elif param == "version":
                 continue

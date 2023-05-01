@@ -60,18 +60,21 @@ def merge_config_files(user_cfg, default_cfg):
 def compile_x2b_arglist(xnat2bids_dict, session, bindings):
         x2b_param_list = []
         param_lists = ["includeseq", "skipseq"]
+        positional_args = ["sessions", "bids_root"]
         
+        # Handle positional argments SESSION and BIDS_ROOT
+        x2b_param_list.append(session)
+        
+        if "bids_root" in xnat2bids_dict:
+            bids_root = xnat2bids_dict["bids_root"]
+            arg = f"{bids_root}"
+            bindings.append(arg)
+            x2b_param_list.append(arg)
+
         for param, value in xnat2bids_dict.items():
             if value == "" or value is  None:
                 continue
-            # Set {session} as first parameter
-            elif param == "sessions":
-                x2b_param_list.insert(0,session)
-            # Set {bids_root} as second parameter
-            elif param == "bids_root":
-                arg = f"{value}"
-                bindings.append(arg)
-                x2b_param_list.insert(1, arg)
+            # Extract bidsmap parameter
             elif param == "bidsmap-file":
                 arg = f"--{param} {value}"
                 bindings.append(value)
@@ -95,6 +98,9 @@ def compile_x2b_arglist(xnat2bids_dict, session, bindings):
             elif param in param_lists:
                 arg = extract_params(param, value)
                 x2b_param_list.append(arg)
+            # Skip positional arguments previously handled
+            elif param in positional_args:
+                continue
             # Other arguments follow --param value format.
             else:
                 arg = f"--{param} {value}"
@@ -156,6 +162,9 @@ async def main():
 
     # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
     if 'sessions' not in arg_dict['xnat2bids-args']:
+        docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
+        logging.warning("No sessions were provided in the configuration file. Please specify session(s) to process.")
+        logging.info("For helpful guidance, check out our docs at %s", docs)
         sessions_input = input("Enter Session(s) (comma-separated): ")
         arg_dict['xnat2bids-args']['sessions'] = [s.strip() for s in sessions_input.split(',')]
         

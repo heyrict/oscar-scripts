@@ -57,7 +57,7 @@ def merge_config_files(user_cfg, default_cfg):
 
         return merged_dict
 
-def compile_x2b_arglist(xnat2bids_dict, session, bindings):
+def parse_x2b_params(xnat2bids_dict, session, bindings):
         x2b_param_list = []
         param_lists = ["includeseq", "skipseq"]
         positional_args = ["sessions", "bids_root"]
@@ -112,14 +112,21 @@ def compile_x2b_arglist(xnat2bids_dict, session, bindings):
 
         return xnat_tools_cmd, x2b_param_list
 
-def compile_argument_list(session, arg_dict, user):
+def compile_slurm_list(arg_dict, user):
+    slurm_param_list = []
+    for param, value in arg_dict["slurm-args"].items():
+        if value != "" and value is not None:
+            arg = f"--{param} {value}"
+            slurm_param_list.append(arg)
+    return slurm_param_list
+
+def compile_xnat2bids_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
 
     # Create copy of dictionary, so as not to update
     # the original object reference while merging configs.
     arg_dict_copy = copy.deepcopy(arg_dict) 
 
-    slurm_param_list = []
     bindings = []
     # Compile list of appended arguments
     x2b_param_dict = {}
@@ -128,21 +135,14 @@ def compile_argument_list(session, arg_dict, user):
         if section_name == "xnat2bids-args":
             x2b_param_dict = section_dict
 
-        # Extract slurm-args from original dictionary
-        elif section_name == "slurm-args":
-            for param, value in section_dict.items():
-                if value != "" and value is not None:
-                    arg = f"--{param} {value}"
-                    slurm_param_list.append(arg)
-
         # If a session key exist for the current session being 
         # processed, update final config with session block. 
         elif section_name == session:
                 x2b_param_dict.update(section_dict)
     
-    # Transform session config dictionary into argument list.
-    xnat_tools_cmd, x2b_param_list = compile_x2b_arglist(x2b_param_dict, session, bindings)
-    return xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings
+    # Transform session config dictionary into a parameter list.
+    xnat_tools_cmd, x2b_param_list = parse_x2b_params(x2b_param_dict, session, bindings)
+    return xnat_tools_cmd, x2b_param_list, bindings
 
 async def main():
     # Instantiate argument parserß
@@ -179,10 +179,18 @@ async def main():
 
     # Assemble parameter lists per session
     argument_lists = []
+
+    # Compile list of slurm parameters.
+    slurm_param_list = compile_slurm_list(arg_dict, user)
+
+    # Initialize bids_root for non-local use
+    bids_root = ""
+
+    # Compile parameter list per session for calls to xnat2bids
     for session in arg_dict['xnat2bids-args']['sessions']:
 
         # Fetch compiled xnat2bids and slurm parameter lists
-        xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings = compile_argument_list(session, arg_dict, user)
+        xnat_tools_cmd, x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
 
         # Insert username and password into x2b_param_list
         x2b_param_list.insert(2, f"--user {user}")
@@ -192,7 +200,7 @@ async def main():
         if not ('version' in arg_dict['xnat2bids-args']):
             version = fetch_latest_version()
         else:
-            version =  arg_dict['xnat2bids-args']['version']
+            version = arg_dict['xnat2bids-args']['version']
 
         # Define singularity image 
         simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
@@ -235,6 +243,21 @@ async def main():
         "x2b_param_list": x2b_param_list_without_password,
 
         })
+
+    if "dcm2bids-args" in arg_dict:
+        dcm2bids_bindings = []
+
+        # Fetch project and study parameters
+        project = arg_dict["dcm2bids-args"]["project"]
+        study = arg_dict["dcm2bids-args"]["study"]
+
+        dcm2bids_bindings.append(bids_root)
+
+
+        argument_lists.append(("xnat-heudiconv", [project, study, bids_root], slurm_param_list, dcm2bids_bindings))
+
+        bids_experiment_dir = f"{bids_root}/{project}/{study}/bids/"
+        argument_lists.append(("bids-postprocess-", [bids_experiment_dir], slurm_param_list, dcm2bids_bindings))
 
     # Loop over argument lists for provided sessions.
     tasks = []

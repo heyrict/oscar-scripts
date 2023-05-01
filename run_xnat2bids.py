@@ -61,7 +61,9 @@ def compile_x2b_arglist(xnat2bids_dict, session, bindings):
         x2b_param_list = []
         param_lists = ["includeseq", "skipseq"]
         positional_args = ["sessions", "bids_root"]
-        
+
+        # Run entire xnat2bids pipeline by default
+        xnat_tools_cmd = "xnat2bids"
         # Handle positional argments SESSION and BIDS_ROOT
         x2b_param_list.append(session)
         
@@ -101,12 +103,14 @@ def compile_x2b_arglist(xnat2bids_dict, session, bindings):
             # Skip positional arguments previously handled
             elif param in positional_args:
                 continue
+            elif param == "export-only":
+                if value == True: xnat_tools_cmd = "xnat-dicom-export"
             # Other arguments follow --param value format.
             else:
                 arg = f"--{param} {value}"
                 x2b_param_list.append(arg)
 
-        return x2b_param_list
+        return xnat_tools_cmd, x2b_param_list
 
 def compile_argument_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
@@ -137,8 +141,8 @@ def compile_argument_list(session, arg_dict, user):
                 x2b_param_dict.update(section_dict)
     
     # Transform session config dictionary into argument list.
-    x2b_param_list = compile_x2b_arglist(x2b_param_dict, session, bindings)
-    return x2b_param_list, slurm_param_list, bindings
+    xnat_tools_cmd, x2b_param_list = compile_x2b_arglist(x2b_param_dict, session, bindings)
+    return xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings
 
 async def main():
     # Instantiate argument parserß
@@ -178,7 +182,7 @@ async def main():
     for session in arg_dict['xnat2bids-args']['sessions']:
 
         # Fetch compiled xnat2bids and slurm parameter lists
-        x2b_param_list, slurm_param_list, bindings = compile_argument_list(session, arg_dict, user)
+        xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings = compile_argument_list(session, arg_dict, user)
 
         # Insert username and password into x2b_param_list
         x2b_param_list.insert(2, f"--user {user}")
@@ -216,7 +220,7 @@ async def main():
             os.mkdir(os.path.dirname(bids_root))  
 
         # Store xnat2bids, slurm, and binding paramters as tuple.
-        argument_lists.append((x2b_param_list, slurm_param_list, bindings))
+        argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))
 
         # Set logging level per session verbosity. 
         set_logging_level(x2b_param_list)
@@ -235,17 +239,18 @@ async def main():
     # Loop over argument lists for provided sessions.
     tasks = []
     for args in argument_lists:
-        # Compile bindings into formated string
-        bindings = ' '.join(f"-B {path}" for path in args[2])
-
         # Compilie slurm and xnat2bids args 
-        xnat2bids_options = ' '.join(args[0])
-        slurm_options = ' '.join(args[1])
+        xnat_tools_cmd = args[0]
+        xnat2bids_options = ' '.join(args[1])
+        slurm_options = ' '.join(args[2])
+
+        # Compile bindings into formated string
+        bindings = ' '.join(f"-B {path}" for path in args[3])
 
         # Build shell script for sbatch
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
             apptainer exec --no-home {bindings} {simg} \
-            xnat2bids {xnat2bids_options}\nEOF\n)\""
+            {xnat_tools_cmd} {xnat2bids_options}\nEOF\n)\""
 
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
@@ -275,7 +280,7 @@ async def main():
 
         logging.debug({
             "message": "Executing xnat2bids",
-            "session": args[0][0],
+            "session": args[1][0],
             "command": sbatch_cmd_without_password
         })
         

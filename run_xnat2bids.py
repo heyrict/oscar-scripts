@@ -44,11 +44,12 @@ def add_job_name(slurm_param_list, new_job_name):
     slurm_param_list.append(f"--job-name {new_job_name}")
 
 def merge_config_files(user_cfg, default_cfg):
-
         user_slurm = user_cfg['slurm-args']
-        user_x2b = user_cfg['xnat2bids-args']
         default_slurm = default_cfg['slurm-args']
         default_x2b = default_cfg['xnat2bids-args']
+
+        if "xnat2bids-args" in user_cfg:
+            user_x2b = user_cfg['xnat2bids-args']
 
         # Assemble merged dictionary with default values.
         merged_dict = defaultdict(dict)
@@ -57,7 +58,9 @@ def merge_config_files(user_cfg, default_cfg):
 
         # Update merged dictionary with user provided arguments.
         merged_dict['slurm-args'].update(user_slurm)
-        merged_dict['xnat2bids-args'].update(user_x2b)
+
+        if "xnat2bids-args" in user_cfg:
+            merged_dict['xnat2bids-args'].update(user_x2b)
         
         # Add session specific parameter blocks
         for key in user_cfg.keys():
@@ -210,7 +213,7 @@ async def main():
         arg_dict = merge_config_files(user_params, default_params)
 
     # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
-    if 'sessions' not in arg_dict['xnat2bids-args']:
+    if 'sessions' not in arg_dict['xnat2bids-args'] and "dcm2bids-args" not in arg_dict:
         docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
         logging.warning("No sessions were provided in the configuration file. Please specify session(s) to process.")
         logging.info("For helpful guidance, check out our docs at %s", docs)
@@ -229,68 +232,69 @@ async def main():
     slurm_param_list = compile_slurm_list(arg_dict, user)
 
     # Initialize bids_root for non-local use
-    bids_root = ""
+    bids_root = f"/users/{user}/bids-export/"
+
+    # Initialize version and singularity image for non-local use
+    version = fetch_latest_version()
+    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
     # Compile parameter list per session for calls to xnat2bids
-    for session in arg_dict['xnat2bids-args']['sessions']:
+    if "sessions" in arg_dict['xnat2bids-args']:
+        for session in arg_dict['xnat2bids-args']['sessions']:
 
-        # Fetch compiled xnat2bids and slurm parameter lists
-        xnat_tools_cmd, x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
+            # Fetch compiled xnat2bids and slurm parameter lists
+            xnat_tools_cmd, x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
 
-        # Insert username and password into x2b_param_list
-        x2b_param_list.insert(2, f"--user {user}")
-        x2b_param_list.insert(3, f"--pass {password}")
+            # Insert username and password into x2b_param_list
+            x2b_param_list.insert(2, f"--user {user}")
+            x2b_param_list.insert(3, f"--pass {password}")
 
-        # Fetch latest version if not provided
-        if not ('version' in arg_dict['xnat2bids-args']):
-            version = fetch_latest_version()
-        else:
-            version = arg_dict['xnat2bids-args']['version']
+            # Fetch latest version if not provided
+            if'version' in arg_dict['xnat2bids-args']:
+                version = arg_dict['xnat2bids-args']['version']
+                simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-        # Define singularity image 
-        simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+            # Define output for logs
+            if not ('output' in arg_dict['slurm-args']):
+                output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+                arg = f"--output {output}"
+                slurm_param_list.append(arg)
+            else:
+                output = arg_dict['slurm-args']['output']
 
-        # Define output for logs
-        if not ('output' in arg_dict['slurm-args']):
-            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
-            arg = f"--output {output}"
-            slurm_param_list.append(arg)
-        else:
-            output = arg_dict['slurm-args']['output']
+            if not (os.path.exists(os.path.dirname(output))):
+                os.mkdir(os.path.dirname(output))
 
-        if not (os.path.exists(os.path.dirname(output))):
-            os.mkdir(os.path.dirname(output))
+            add_job_name(slurm_param_list, "xnat2bids")
 
-        add_job_name(slurm_param_list, "xnat2bids")
-
-        # Define bids root directory
-        if not ('bids_root' in arg_dict['xnat2bids-args']):
-            bids_root = f"/users/{user}/bids-export/"
+            # Define bids root directory
+            if 'bids_root' in arg_dict['xnat2bids-args']:
+                bids_root = x2b_param_list[1]
+            
             x2b_param_list.insert(1, bids_root)
             bindings.append(bids_root)
-        else:
-            bids_root = x2b_param_list[1]
 
-        if not (os.path.exists(os.path.dirname(bids_root))):
-            os.mkdir(os.path.dirname(bids_root))  
+            if not (os.path.exists(os.path.dirname(bids_root))):
+                os.mkdir(os.path.dirname(bids_root))  
 
-        # Store xnat2bids, slurm, and binding paramters as tuple.
-        argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))
+            # Store xnat2bids, slurm, and binding paramters as tuple.
+            argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))
 
-        # Set logging level per session verbosity. 
-        set_logging_level(x2b_param_list)
+            # Set logging level per session verbosity. 
+            set_logging_level(x2b_param_list)
 
-        # Remove the password parameter from the x2b_param_list
-        x2b_param_list_without_password = [param for param in x2b_param_list if not param.startswith('--pass')]
+            # Remove the password parameter from the x2b_param_list
+            x2b_param_list_without_password = [param for param in x2b_param_list if not param.startswith('--pass')]
 
-        logging.debug({
-        "message": "Argument List",
-        "session": session,
-         "slurm_param_list": slurm_param_list,
-        "x2b_param_list": x2b_param_list_without_password,
+            logging.debug({
+            "message": "Argument List",
+            "session": session,
+                "slurm_param_list": slurm_param_list,
+            "x2b_param_list": x2b_param_list_without_password,
 
-        })
+            })
 
+    # Run Heudiconv for any user defined sessions
     if "dcm2bids-args" in arg_dict:
         dcm2bids_bindings = []
 
@@ -299,9 +303,10 @@ async def main():
 
         heudiconv_slurm_params = list(slurm_param_list)
 
+
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
-            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+            output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
             arg = f"--output {output}"
             heudiconv_slurm_params.append(arg)
 

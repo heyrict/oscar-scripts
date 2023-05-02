@@ -33,6 +33,16 @@ def extract_params(param, value):
         arg.append(f"--{param} {v}")
     return ' '.join(arg)
 
+def add_job_name(slurm_param_list, new_job_name):
+    # Check if --job-name is already in the list
+    for i, param in enumerate(slurm_param_list):
+        if param.startswith("--job-name"):
+            # If --job-name is already in the list, replace it
+            slurm_param_list[i] = f"--job-name {new_job_name}"
+            return
+    # If --job-name is not in the list, append it
+    slurm_param_list.append(f"--job-name {new_job_name}")
+
 def merge_config_files(user_cfg, default_cfg):
 
         user_slurm = user_cfg['slurm-args']
@@ -144,6 +154,41 @@ def compile_xnat2bids_list(session, arg_dict, user):
     xnat_tools_cmd, x2b_param_list = parse_x2b_params(x2b_param_dict, session, bindings)
     return xnat_tools_cmd, x2b_param_list, bindings
 
+def compile_dcm2bids_list(arg_dict, d2b_bindings):
+    d2b_param_list = []
+    positional_arguments = ["project", "study", "bids_root"]
+
+    if "project" in arg_dict["dcm2bids-args"]:
+        project = arg_dict["dcm2bids-args"]["project"]
+        d2b_param_list.append(project)
+    
+    if "subject" in arg_dict["dcm2bids-args"]:
+        subject = arg_dict["dcm2bids-args"]["subject"]
+        d2b_param_list.append(subject)
+
+    if "bids_root" in arg_dict["dcm2bids-args"]:
+        bids_root = arg_dict["dcm2bids-args"]["bids_root"]
+        arg = f"{bids_root}"
+        d2b_bindings.append(arg)
+        d2b_param_list.append(arg)
+
+    for param, value in arg_dict["dcm2bids-args"].items():
+        if value == "" or value is  None:
+            continue
+        if param in positional_arguments:
+            continue
+        elif param == "overwrite":
+            arg = f"--{param}"
+            if value == True: d2b_param_list.append(arg) 
+        elif param == "cleanup":
+            arg = f"--{param}"
+            if value == True: d2b_param_list.append(arg)
+        elif param == "session-suffix":
+            arg = f"--{param} {value}"
+            d2b_param_list.append(arg)
+
+    return d2b_param_list
+
 async def main():
     # Instantiate argument parserß
     parser = argparse.ArgumentParser()
@@ -216,6 +261,8 @@ async def main():
         if not (os.path.exists(os.path.dirname(output))):
             os.mkdir(os.path.dirname(output))
 
+        add_job_name(slurm_param_list, "xnat2bids")
+
         # Define bids root directory
         if not ('bids_root' in arg_dict['xnat2bids-args']):
             bids_root = f"/users/{user}/bids-export/"
@@ -247,17 +294,26 @@ async def main():
     if "dcm2bids-args" in arg_dict:
         dcm2bids_bindings = []
 
-        # Fetch project and study parameters
-        project = arg_dict["dcm2bids-args"]["project"]
-        study = arg_dict["dcm2bids-args"]["study"]
+        # Fetch dcm2bids parameters
+        d2b_param_list = compile_dcm2bids_list(arg_dict, dcm2bids_bindings)
 
-        dcm2bids_bindings.append(bids_root)
+        heudiconv_slurm_params = list(slurm_param_list)
 
+        # Define output for logs
+        if not ('output' in arg_dict['slurm-args']):
+            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+            arg = f"--output {output}"
+            heudiconv_slurm_params.append(arg)
 
-        argument_lists.append(("xnat-heudiconv", [project, study, bids_root], slurm_param_list, dcm2bids_bindings))
+        add_job_name(heudiconv_slurm_params, "xnat-heudiconv")
 
-        bids_experiment_dir = f"{bids_root}/{project}/{study}/bids/"
-        argument_lists.append(("bids-postprocess-", [bids_experiment_dir], slurm_param_list, dcm2bids_bindings))
+        # Add BIDS_ROOT to bindings for heudiconv
+        if not ("bids_root" in arg_dict["dcm2bids-args"]):
+            d2b_param_list.insert(2, bids_root)
+            dcm2bids_bindings.append(bids_root)
+
+        # Add heudiconv command arguments to list for execution
+        argument_lists.append(("xnat-heudiconv", d2b_param_list, heudiconv_slurm_params, dcm2bids_bindings))
 
     # Loop over argument lists for provided sessions.
     tasks = []

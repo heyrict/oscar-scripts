@@ -367,7 +367,7 @@ async def main():
         logging.debug({
             "message": "Executing xnat2bids",
             "session": args[1][0],
-            "command": sbatch_cmd
+            "command": sbatch_cmd_without_password
         })
         
         # Run xnat2bids asynchronously.

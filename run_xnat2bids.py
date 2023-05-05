@@ -327,11 +327,15 @@ async def main():
     for args in argument_lists:
         # Compilie slurm and xnat2bids args 
         xnat_tools_cmd = args[0]
-        xnat2bids_options = ' '.join(args[1])
-        slurm_options = ' '.join(args[2])
+        xnat2bids_param_list = args[1]
+        slurm_param_list = args[2]
+        bindings_paths = args[3]
+
+        xnat2bids_options = ' '.join(xnat2bids_param_list)
+        slurm_options = ' '.join(slurm_param_list)
 
         # Compile bindings into formated string
-        bindings = ' '.join(f"-B {path}" for path in args[3])
+        bindings = ' '.join(f"-B {path}" for path in bindings_paths)
 
         # Build shell script for sbatch
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
@@ -343,7 +347,7 @@ async def main():
             --wrap {sbatch_script}")    
 
         # Set logging level per session verbosity. 
-        set_logging_level(args[1])
+        set_logging_level(xnat2bids_param_list)
 
         # Remove the password from sbatch command before logging 
         xnat2bids_options_without_password = []
@@ -366,7 +370,7 @@ async def main():
 
         logging.debug({
             "message": "Executing xnat2bids",
-            "session": args[1][0],
+            "session": xnat2bids_param_list[0],
             "command": sbatch_cmd_without_password
         })
         

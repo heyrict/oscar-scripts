@@ -30,8 +30,25 @@ def fetch_latest_version():
 
 def extract_params(param, value):
     arg = []
-    for v in value:
-        arg.append(f"--{param} {v}")
+    # if includeseq or skipseq parameter, check whether a
+    # range is specified (a string with a dash), and parse
+    # accordingly
+    if param in ['includeseq','skipseq'] and type(value)==str:
+        val_list = value.replace(" ", "").split(",")
+
+        for val in val_list:
+            if "-" in val:
+                startval,stopval = val.split("-")
+                expanded_val = list(range(int(startval),int(stopval)+1))
+                for v in expanded_val:
+                    arg.append(f"--{param} {v}") 
+            else:
+                arg.append(f"--{param} {val}")
+
+    else:
+        for v in value:
+            arg.append(f"--{param} {v}")
+
     return ' '.join(arg)
 
 def add_job_name(slurm_param_list, new_job_name):

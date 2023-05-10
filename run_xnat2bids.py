@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import copy
 from collections import defaultdict
+from enum import Enum
 from getpass import getpass
 import glob
 import logging
@@ -16,7 +17,31 @@ from toml import load
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
-   
+
+# PARAM_VAL (--param val)
+# MULTI_VAL (-param 1, --param 2, --param n)
+# FLAG_ONLU (--param)
+class ParamType(Enum):
+    PARAM_VAL = 0
+    MULTI_VAL = 1
+    FLAG_ONLY = 2
+    MULTI_FLAG = 3
+
+# param_name: (param_type, needs_binding)
+xnat2bids_params = {
+    "bids_root": (ParamType.PARAM_VAL, True),
+    "bidsmap-file": (ParamType.PARAM_VAL, True),
+    "host": (ParamType.PARAM_VAL, False),
+    "log-id": (ParamType.PARAM_VAL, False),
+    "version": (ParamType.PARAM_VAL, False),
+    "includeseq": (ParamType.MULTI_VAL, False),
+    "skipseq": (ParamType.MULTI_VAL, False),
+    "export-only": (ParamType.FLAG_ONLY, False),
+    "overwrite": (ParamType.FLAG_ONLY, False),
+    "skip-export": (ParamType.FLAG_ONLY, False),
+    "verbose": (ParamType.MULTI_FLAG, False),
+}  
+
 def set_logging_level(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -34,97 +59,74 @@ def extract_params(param, value):
         arg.append(f"--{param} {v}")
     return ' '.join(arg)
 
-def add_job_name(slurm_param_list, new_job_name):
-    # Check if --job-name is already in the list
-    for i, param in enumerate(slurm_param_list):
-        if param.startswith("--job-name"):
-            # If --job-name is already in the list, replace it
-            slurm_param_list[i] = f"--job-name {new_job_name}"
-            return
-    # If --job-name is not in the list, append it
-    slurm_param_list.append(f"--job-name {new_job_name}")
-
 def merge_config_files(user_cfg, default_cfg):
-        user_slurm = user_cfg['slurm-args']
-        default_slurm = default_cfg['slurm-args']
-        default_x2b = default_cfg['xnat2bids-args']
+    user_slurm = user_cfg['slurm-args']
+    default_slurm = default_cfg['slurm-args']
+    default_x2b = default_cfg['xnat2bids-args']
 
-        if "xnat2bids-args" in user_cfg:
-            user_x2b = user_cfg['xnat2bids-args']
+    if "xnat2bids-args" in user_cfg:
+        user_x2b = user_cfg['xnat2bids-args']
 
-        # Assemble merged dictionary with default values.
-        merged_dict = defaultdict(dict)
-        merged_dict['xnat2bids-args'].update(default_x2b)
-        merged_dict['slurm-args'].update(default_slurm)
+    # Assemble merged dictionary with default values.
+    merged_dict = defaultdict(dict)
+    merged_dict['xnat2bids-args'].update(default_x2b)
+    merged_dict['slurm-args'].update(default_slurm)
 
-        # Update merged dictionary with user provided arguments.
-        merged_dict['slurm-args'].update(user_slurm)
+    # Update merged dictionary with user provided arguments.
+    merged_dict['slurm-args'].update(user_slurm)
 
-        if "xnat2bids-args" in user_cfg:
-            merged_dict['xnat2bids-args'].update(user_x2b)
-        
-        # Add session specific parameter blocks
-        for key in user_cfg.keys():
-            if key == 'slurm-args' or key == 'xnat2bids-args':
-                continue
-            merged_dict[key].update(user_cfg[key])
+    if "xnat2bids-args" in user_cfg:
+        merged_dict['xnat2bids-args'].update(user_x2b)
+    
+    # Add session specific parameter blocks
+    for key in user_cfg.keys():
+        if key == 'slurm-args' or key == 'xnat2bids-args':
+            continue
+        merged_dict[key].update(user_cfg[key])
 
-        return merged_dict
+    return merged_dict
 
 def parse_x2b_params(xnat2bids_dict, session, bindings):
-        x2b_param_list = []
-        param_lists = ["includeseq", "skipseq"]
-        positional_args = ["sessions", "bids_root"]
+    x2b_param_list = []
+    positional_args = ["sessions", "bids_root"]
 
-        # Run entire xnat2bids pipeline by default
-        xnat_tools_cmd = "xnat2bids"
-        # Handle positional argments SESSION and BIDS_ROOT
-        x2b_param_list.append(session)
-        
-        if "bids_root" in xnat2bids_dict:
-            bids_root = xnat2bids_dict["bids_root"]
-            arg = f"{bids_root}"
-            bindings.append(arg)
+    # Handle positional argments SESSION and BIDS_ROOT
+    x2b_param_list.append(session)
+    
+    if "bids_root" in xnat2bids_dict:
+        bids_root = xnat2bids_dict["bids_root"]
+        arg = f"{bids_root}"
+        bindings.append(arg)
+        x2b_param_list.append(arg)
+
+    for param, value in xnat2bids_dict.items():
+        if param not in xnat2bids_params:
+            continue
+        if value == "" or value is  None:
+            continue
+        if param in positional_args:
+            continue
+
+        param_type = xnat2bids_params[param][0]
+        if param_type == ParamType.PARAM_VAL:
+            arg = f"--{param} {value}"
             x2b_param_list.append(arg)
-
-        for param, value in xnat2bids_dict.items():
-            if value == "" or value is  None:
-                continue
-            # Extract bidsmap parameter
-            elif param == "bidsmap-file":
-                arg = f"--{param} {value}"
-                bindings.append(value)
-                x2b_param_list.append(arg)
-            # Set as many verbose flags as specified.
-            elif param == "verbose":
-                arg = f"--{param}"
-                for i in range(value):
-                    x2b_param_list.append(arg)
-            # If overwrite is equal to true, set flag.
-            elif param == "overwrite":
-                arg = f"--{param}"
-                if value == True: x2b_param_list.append(arg) 
-            elif param == "cleanup":
-                arg = f"--{param}"
-                if value == True: x2b_param_list.append(arg)
-            # If version is specified, continue
-            elif param == "version":
-                continue
-            # Extract parameters from include / skip lists
-            elif param in param_lists:
-                arg = extract_params(param, value)
-                x2b_param_list.append(arg)
-            # Skip positional arguments previously handled
-            elif param in positional_args:
-                continue
-            elif param == "export-only":
-                if value == True: xnat_tools_cmd = "xnat-dicom-export"
-            # Other arguments follow --param value format.
-            else:
-                arg = f"--{param} {value}"
+        elif param_type == ParamType.MULTI_VAL:
+            arg = extract_params(param, value)
+            x2b_param_list.append(arg)
+        elif param_type == ParamType.FLAG_ONLY:
+            arg = f"--{param}"
+            x2b_param_list.append(arg)
+        elif param_type == ParamType.MULTI_FLAG:
+            arg = f"--{param}"
+            for i in range(value):
                 x2b_param_list.append(arg)
 
-        return xnat_tools_cmd, x2b_param_list
+        needs_binding = xnat2bids_params[param][1]
+        if needs_binding:
+            bindings.append(value)
+
+    return x2b_param_list
 
 def compile_slurm_list(arg_dict, user):
     slurm_param_list = []
@@ -134,40 +136,6 @@ def compile_slurm_list(arg_dict, user):
             slurm_param_list.append(arg)
     return slurm_param_list
 
-def compile_dcm2bids_list(arg_dict, d2b_bindings):
-    d2b_param_list = []
-    positional_arguments = ["project", "study", "bids_root"]
-
-    if "project" in arg_dict["dcm2bids-args"]:
-        project = arg_dict["dcm2bids-args"]["project"]
-        d2b_param_list.append(project)
-    
-    if "subject" in arg_dict["dcm2bids-args"]:
-        subject = arg_dict["dcm2bids-args"]["subject"]
-        d2b_param_list.append(subject)
-
-    if "bids_root" in arg_dict["dcm2bids-args"]:
-        bids_root = arg_dict["dcm2bids-args"]["bids_root"]
-        arg = f"{bids_root}"
-        d2b_bindings.append(arg)
-        d2b_param_list.append(arg)
-
-    for param, value in arg_dict["dcm2bids-args"].items():
-        if value == "" or value is  None:
-            continue
-        if param in positional_arguments:
-            continue
-        elif param == "overwrite":
-            arg = f"--{param}"
-            if value == True: d2b_param_list.append(arg) 
-        elif param == "cleanup":
-            arg = f"--{param}"
-            if value == True: d2b_param_list.append(arg)
-        elif param == "session-suffix":
-            arg = f"--{param} {value}"
-            d2b_param_list.append(arg)
-
-    return d2b_param_list
 
 def compile_xnat2bids_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
@@ -190,8 +158,9 @@ def compile_xnat2bids_list(session, arg_dict, user):
                 x2b_param_dict.update(section_dict)
     
     # Transform session config dictionary into a parameter list.
-    xnat_tools_cmd, x2b_param_list = parse_x2b_params(x2b_param_dict, session, bindings)
-    return xnat_tools_cmd, x2b_param_list, bindings
+    x2b_param_list = parse_x2b_params(x2b_param_dict, session, bindings)
+    return x2b_param_list, bindings
+
 
 async def main():
     # Instantiate argument parserß
@@ -244,7 +213,7 @@ async def main():
         for session in arg_dict['xnat2bids-args']['sessions']:
 
             # Fetch compiled xnat2bids and slurm parameter lists
-            xnat_tools_cmd, x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
+            x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
 
             # Insert username and password into x2b_param_list
             x2b_param_list.insert(2, f"--user {user}")
@@ -266,8 +235,6 @@ async def main():
             if not (os.path.exists(os.path.dirname(output))):
                 os.mkdir(os.path.dirname(output))
 
-            add_job_name(slurm_param_list, "xnat2bids")
-
             # Define bids root directory
             if 'bids_root' in arg_dict['xnat2bids-args']:
                 bids_root = x2b_param_list[1]
@@ -279,7 +246,7 @@ async def main():
                 os.mkdir(os.path.dirname(bids_root))  
 
             # Store xnat2bids, slurm, and binding paramters as tuple.
-            argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))
+            argument_lists.append((x2b_param_list, slurm_param_list, bindings))
 
             # Set logging level per session verbosity. 
             set_logging_level(x2b_param_list)
@@ -295,41 +262,14 @@ async def main():
 
             })
 
-    # Run Heudiconv for any user defined sessions
-    if "dcm2bids-args" in arg_dict:
-        dcm2bids_bindings = []
-
-        # Fetch dcm2bids parameters
-        d2b_param_list = compile_dcm2bids_list(arg_dict, dcm2bids_bindings)
-
-        heudiconv_slurm_params = list(slurm_param_list)
-
-        # Define output for logs
-        if not ('output' in arg_dict['slurm-args']):
-            output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
-            arg = f"--output {output}"
-            heudiconv_slurm_params.append(arg)
-
-        add_job_name(heudiconv_slurm_params, "xnat-heudiconv")
-
-        # Add BIDS_ROOT to bindings for heudiconv
-        if not ("bids_root" in arg_dict["dcm2bids-args"]):
-            d2b_param_list.insert(2, bids_root)
-            dcm2bids_bindings.append(bids_root)
-
-        # Add heudiconv command arguments to list for execution
-        argument_lists.append(("xnat-heudiconv", d2b_param_list, heudiconv_slurm_params, dcm2bids_bindings))
-
-
     # Loop over argument lists for provided sessions.
     tasks = []
     needs_dependency = False
     for args in argument_lists:
         # Compilie slurm and xnat2bids args 
-        xnat_tools_cmd = args[0]
-        xnat2bids_param_list = args[1]
-        slurm_param_list = args[2]
-        bindings_paths = args[3]
+        xnat2bids_param_list = args[0]
+        slurm_param_list = args[1]
+        bindings_paths = args[2]
 
         xnat2bids_options = ' '.join(xnat2bids_param_list)
         slurm_options = ' '.join(slurm_param_list)
@@ -340,7 +280,7 @@ async def main():
         # Build shell script for sbatch
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
             apptainer exec --no-home {bindings} {simg} \
-            {xnat_tools_cmd} {xnat2bids_options}\nEOF\n)\""
+            xnat2bids {xnat2bids_options}\nEOF\n)\""
 
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \

@@ -16,7 +16,7 @@ from toml import load
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
-   
+
 def set_logging_level(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -43,6 +43,14 @@ def add_job_name(slurm_param_list, new_job_name):
             return
     # If --job-name is not in the list, append it
     slurm_param_list.append(f"--job-name {new_job_name}")
+
+def fetch_job_ids():
+    jobs = []
+    with open("x2b_launched_jobs.txt", "r") as f:
+        for line in f:
+            job_id = line.replace("Submitted batch job ", "" ).strip()
+            jobs.append(job_id)
+    return jobs
 
 def merge_config_files(user_cfg, default_cfg):
         user_slurm = user_cfg['slurm-args']
@@ -229,9 +237,6 @@ async def main():
     # Assemble parameter lists per session
     argument_lists = []
 
-    # Compile list of slurm parameters.
-    slurm_param_list = compile_slurm_list(arg_dict, user)
-
     # Initialize bids_root for non-local use
     bids_root = f"/users/{user}/bids-export/"
 
@@ -242,6 +247,9 @@ async def main():
     # Compile parameter list per session for calls to xnat2bids
     if "sessions" in arg_dict['xnat2bids-args']:
         for session in arg_dict['xnat2bids-args']['sessions']:
+
+            # Compile list of slurm parameters.
+            slurm_param_list = compile_slurm_list(arg_dict, user)
 
             # Fetch compiled xnat2bids and slurm parameter lists
             xnat_tools_cmd, x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
@@ -264,7 +272,7 @@ async def main():
                 output = arg_dict['slurm-args']['output']
 
             if not (os.path.exists(os.path.dirname(output))):
-                os.mkdir(os.path.dirname(output))
+                os.makedirs(os.path.dirname(output))
 
             add_job_name(slurm_param_list, "xnat2bids")
 
@@ -272,11 +280,14 @@ async def main():
             if 'bids_root' in arg_dict['xnat2bids-args']:
                 bids_root = x2b_param_list[1]
             
+            if not (os.path.exists(os.path.dirname(bids_root))):
+                os.makedirs(os.path.dirname(bids_root))
+            
             x2b_param_list.insert(1, bids_root)
             bindings.append(bids_root)
 
             if not (os.path.exists(os.path.dirname(bids_root))):
-                os.mkdir(os.path.dirname(bids_root))  
+                os.makedirs(os.path.dirname(bids_root))  
 
             # Store xnat2bids, slurm, and binding paramters as tuple.
             argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))
@@ -320,6 +331,8 @@ async def main():
         # Add heudiconv command arguments to list for execution
         argument_lists.append(("xnat-heudiconv", d2b_param_list, heudiconv_slurm_params, dcm2bids_bindings))
 
+    # Open output file to field stdout from slurm
+    f = open("x2b_launched_jobs.txt", "w+")
 
     # Loop over argument lists for provided sessions.
     tasks = []
@@ -343,7 +356,7 @@ async def main():
             {xnat_tools_cmd} {xnat2bids_options}\nEOF\n)\""
 
         # Process command string for SRUN
-        sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
+        sbatch_cmd = shlex.split(f"sbatch {slurm_options} \
             --wrap {sbatch_script}")    
 
         # Set logging level per session verbosity. 
@@ -375,11 +388,48 @@ async def main():
         })
         
         # Run xnat2bids asynchronously.
-        task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_cmd))
+        task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_cmd, stdout=f))
         tasks.append(task)
+
+    # Wait for stdout to be flushed to output file 
+    await asyncio.sleep(1)
+
+    # Launch BIDS Validator after jobs have completed 
+    afterok_ids = ":".join(fetch_job_ids())
+    simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
+
+    # Define bids_experiment_dir
+    bids_experiment_dir = glob.glob(f"{bids_root}/*/*/bids")[0]
+    # Build shell script for sbatch
+    sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
+        apptainer exec --no-home -B {bids_experiment_dir} {simg} \
+        bids-validator {bids_experiment_dir}\nEOF\n)\""
+
+    # Compile list of slurm parameters.
+    bids_val_slurm_params = compile_slurm_list(arg_dict, user)
+    output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+    arg = f"--output {output}"
+    bids_val_slurm_params.append(arg)
+    slurm_options = ' '.join(bids_val_slurm_params)
+
+    # Process command string for SRUN
+    slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
+
+    sbatch_bids_val_cmd = shlex.split(f"sbatch -Q -d afterok:{afterok_ids} {slurm_options} \
+        --wrap {sbatch_bids_val_script}") 
+
+    print(sbatch_bids_val_cmd)
+
+    # Run xnat2bids asynchronously.
+    task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_bids_val_cmd))
+    tasks.append(task)
 
     # Wait for all subprocess tasks to complete
     await asyncio.gather(*tasks)
+
+    # Close and remove output file    
+    f.close()
+    os.remove(f.name)
 
 
     logging.info("Launched %d %s", len(tasks), "jobs" if len(tasks) > 1 else "job")

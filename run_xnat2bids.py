@@ -198,9 +198,6 @@ async def main():
     # Assemble parameter lists per session
     argument_lists = []
 
-    # Compile list of slurm parameters.
-    slurm_param_list = compile_slurm_list(arg_dict, user)
-
     # Initialize bids_root for non-local use
     bids_root = f"/users/{user}/bids-export/"
 
@@ -211,6 +208,9 @@ async def main():
     # Compile parameter list per session for calls to xnat2bids
     if "sessions" in arg_dict['xnat2bids-args']:
         for session in arg_dict['xnat2bids-args']['sessions']:
+
+            # Compile list of slurm parameters.
+            slurm_param_list = compile_slurm_list(arg_dict, user)
 
             # Fetch compiled xnat2bids and slurm parameter lists
             x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)

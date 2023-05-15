@@ -3,7 +3,7 @@ import os
 import sys 
 import unittest
 sys.path.append(os.path.abspath("../"))
-from run_xnat2bids import compile_xnat2bids_list, compile_slurm_list
+from run_xnat2bids import compile_xnat2bids_list, compile_slurm_list, extract_params
 from run_xnat2bids import parse_x2b_params
 
 
@@ -84,6 +84,37 @@ class TestRunXnat2BIDS(unittest.TestCase):
         self.assertEqual(result, expected_result)
         self.assertEqual(bindings, expected_bindings)
 
+    def test_extract_params_list(self):
+        # Test extraction of list input
+        param = "includeseq"
+        value = [1, 2, 3, 4]
+        result = extract_params(param, value)
+        expected_result = "--includeseq 1 --includeseq 2 --includeseq 3 --includeseq 4"
+        self.assertEqual(result, expected_result)
+
+    def test_extract_params_range(self):
+        # Test extraction of range input
+        param = "includeseq"
+        value = "1-4, 7, 10"
+        result = extract_params(param, value)
+        expected_result = "--includeseq 1 --includeseq 2 --includeseq 3 --includeseq 4 --includeseq 7 --includeseq 10"
+        self.assertEqual(result, expected_result)
+
+    def test_extract_params_skipseq(self):
+        # Test extraction of skipseq input
+        param = "skipseq"
+        value = "3-5, 7"
+        result = extract_params(param, value)
+        expected_result = "--skipseq 3 --skipseq 4 --skipseq 5 --skipseq 7"
+        self.assertEqual(result, expected_result)
+
+    def test_extract_params_empty(self):
+        # Test extraction of empty input
+        param = "includeseq"
+        value = []
+        result = extract_params(param, value)
+        expected_result = ""
+        self.assertEqual(result, expected_result)
 
 if __name__ == "__main__":
     unittest.main()

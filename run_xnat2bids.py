@@ -83,8 +83,25 @@ def fetch_latest_version():
 
 def extract_params(param, value):
     arg = []
-    for v in value:
-        arg.append(f"--{param} {v}")
+    # if includeseq or skipseq parameter, check whether a
+    # range is specified (a string with a dash), and parse
+    # accordingly
+    if param in ['includeseq','skipseq'] and type(value)==str:
+        val_list = value.replace(" ", "").split(",")
+
+        for val in val_list:
+            if "-" in val:
+                startval,stopval = val.split("-")
+                expanded_val = list(range(int(startval),int(stopval)+1))
+                for v in expanded_val:
+                    arg.append(f"--{param} {v}") 
+            else:
+                arg.append(f"--{param} {val}")
+
+    else:
+        for v in value:
+            arg.append(f"--{param} {v}")
+
     return ' '.join(arg)
 
 def add_job_name(slurm_param_list, new_job_name):
@@ -333,14 +350,11 @@ async def main():
             if 'bids_root' in arg_dict['xnat2bids-args']:
                 bids_root = x2b_param_list[1]
             
-            if not (os.path.exists(os.path.dirname(bids_root))):
-                os.makedirs(os.path.dirname(bids_root))
-            
             x2b_param_list.insert(1, bids_root)
             bindings.append(bids_root)
 
-            if not (os.path.exists(os.path.dirname(bids_root))):
-                os.makedirs(os.path.dirname(bids_root))  
+            if not (os.path.exists(bids_root)):
+                os.makedirs(bids_root)  
 
             # Store xnat2bids, slurm, and binding paramters as tuple.
             argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))

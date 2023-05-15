@@ -281,7 +281,7 @@ async def main():
                 output = arg_dict['slurm-args']['output']
 
             if not (os.path.exists(os.path.dirname(output))):
-                os.mkdir(os.path.dirname(output))
+                os.makedirs(os.path.dirname(output))
 
             add_job_name(slurm_param_list, "xnat2bids")
 
@@ -292,8 +292,8 @@ async def main():
             x2b_param_list.insert(1, bids_root)
             bindings.append(bids_root)
 
-            if not (os.path.exists(os.path.dirname(bids_root))):
-                os.mkdir(os.path.dirname(bids_root))  
+            if not (os.path.exists(bids_root)):
+                os.makedirs(bids_root)  
 
             # Store xnat2bids, slurm, and binding paramters as tuple.
             argument_lists.append((xnat_tools_cmd, x2b_param_list, slurm_param_list, bindings))

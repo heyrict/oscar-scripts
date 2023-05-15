@@ -23,7 +23,7 @@ def get(connection, url, **kwargs):
     r.raise_for_status()
     return r
 
-def get_project_subject_session(connection, host, session, session_suffix):
+def get_project_subject_session(connection, host, session):
     """Get project ID and subject ID from session JSON
     If calling within XNAT, only session is passed"""
     r = get(
@@ -35,14 +35,6 @@ def get_project_subject_session(connection, host, session, session_suffix):
     project = sessionValuesJson["project"]
     subjectID = sessionValuesJson["subject_ID"]
 
-    # If session_suffix == -1, the user has not specified a session value.
-    # Fetch session data from XNAT label (formatted: subj_sess) if exists.
-    # Otherwise, set session label to '01' by default.
-    if session_suffix == "-1":
-        if len(sessionValuesJson["label"].split("_")) == 2:
-            session_suffix = sessionValuesJson["label"].split("_")[1]
-        else:
-            session_suffix = "01"
     r = get(
         connection,
         host + "/data/subjects/%s" % subjectID,
@@ -50,9 +42,9 @@ def get_project_subject_session(connection, host, session, session_suffix):
     )
     subject = r.json()["ResultSet"]["Result"][0]["label"]
 
-    return project, subject, session_suffix
+    return project, subject
 
-def prepare_path_prefixes(project, subject, session):
+def prepare_path_prefixes(project, subject):
     # get PI from project name
     pi_prefix = project.split("_")[0]
 
@@ -459,14 +451,15 @@ async def main():
 
     # Fetch pi and study prefixes for BIDS path
     host = arg_dict["xnat2bids-args"]["host"]
-    proj, subj, sess = get_project_subject_session(connection, host, session, "-1")
-    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj, sess)
+    proj, subj = get_project_subject_session(connection, host, session)
+    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
 
     # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 
     # Define bids_experiment_dir
     bids_experiment_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+
     # Build shell script for sbatch
     sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
         apptainer exec --no-home -B {bids_experiment_dir} {simg} \
@@ -484,7 +477,7 @@ async def main():
 
     # Fetch JOB-IDs of xnat2bids jobs to wait upon
     afterok_ids = ":".join(fetch_job_ids())
-    
+
     sbatch_bids_val_cmd = shlex.split(f"sbatch -Q -d afterok:{afterok_ids} {slurm_options} \
         --wrap {sbatch_bids_val_script}") 
 

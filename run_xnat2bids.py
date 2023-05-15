@@ -26,9 +26,6 @@ def get(connection, url, **kwargs):
 def get_project_subject_session(connection, host, session, session_suffix):
     """Get project ID and subject ID from session JSON
     If calling within XNAT, only session is passed"""
-
-    print("------------------------------------------------")
-    print("Get project and subject information")
     r = get(
         connection,
         host + "/data/experiments/%s" % session,
@@ -46,18 +43,12 @@ def get_project_subject_session(connection, host, session, session_suffix):
             session_suffix = sessionValuesJson["label"].split("_")[1]
         else:
             session_suffix = "01"
-
-    print("Project: " + project)
-    print("Subject ID: " + subjectID)
-    print("Session Suffix:  " + session_suffix)
     r = get(
         connection,
         host + "/data/subjects/%s" % subjectID,
         params={"format": "json", "handler": "values", "columns": "label"},
     )
     subject = r.json()["ResultSet"]["Result"][0]["label"]
-    print("Subject label: " + subject)
-    print("------------------------------------------------")
 
     return project, subject, session_suffix
 
@@ -466,13 +457,12 @@ async def main():
     connection.verify = True
     connection.auth = (user, password)
 
+    # Fetch pi and study prefixes for BIDS path
     host = arg_dict["xnat2bids-args"]["host"]
     proj, subj, sess = get_project_subject_session(connection, host, session, "-1")
     pi_prefix, study_prefix = prepare_path_prefixes(proj, subj, sess)
-    
 
-    # Launch BIDS Validator after jobs have completed 
-    afterok_ids = ":".join(fetch_job_ids())
+    # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 
     # Define bids_experiment_dir
@@ -492,10 +482,11 @@ async def main():
     # Process command string for SRUN
     slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
 
+    # Fetch JOB-IDs of xnat2bids jobs to wait upon
+    afterok_ids = ":".join(fetch_job_ids())
+    
     sbatch_bids_val_cmd = shlex.split(f"sbatch -Q -d afterok:{afterok_ids} {slurm_options} \
         --wrap {sbatch_bids_val_script}") 
-
-    print(sbatch_bids_val_cmd)
 
     # Run xnat2bids asynchronously.
     task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_bids_val_cmd))

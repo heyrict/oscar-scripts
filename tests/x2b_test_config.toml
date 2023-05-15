@@ -13,7 +13,6 @@ sessions = ["XNAT_E00152"]
 bids_root = "/gpfs/data/bnc/shared/bids-export/"
 version = ""
 host="https://xnat.bnc.brown.edu"
-session-suffix=-1
 bidsmap-file="/gpfs/data/bnc/shared/scripts/fmcdona4/bidsmap.json"
 includeseq=[1,2]
 skipseq=[3]

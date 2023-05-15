@@ -7,6 +7,7 @@ import glob
 import logging
 import os
 import pathlib
+import requests
 import shlex
 import shutil
 import subprocess
@@ -16,6 +17,58 @@ from toml import load
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
+
+def get(connection, url, **kwargs):
+    r = connection.get(url, **kwargs)
+    r.raise_for_status()
+    return r
+
+def get_project_subject_session(connection, host, session, session_suffix):
+    """Get project ID and subject ID from session JSON
+    If calling within XNAT, only session is passed"""
+
+    print("------------------------------------------------")
+    print("Get project and subject information")
+    r = get(
+        connection,
+        host + "/data/experiments/%s" % session,
+        params={"format": "json", "handler": "values", "columns": "project,subject_ID,label"},
+    )
+    sessionValuesJson = r.json()["ResultSet"]["Result"][0]
+    project = sessionValuesJson["project"]
+    subjectID = sessionValuesJson["subject_ID"]
+
+    # If session_suffix == -1, the user has not specified a session value.
+    # Fetch session data from XNAT label (formatted: subj_sess) if exists.
+    # Otherwise, set session label to '01' by default.
+    if session_suffix == "-1":
+        if len(sessionValuesJson["label"].split("_")) == 2:
+            session_suffix = sessionValuesJson["label"].split("_")[1]
+        else:
+            session_suffix = "01"
+
+    print("Project: " + project)
+    print("Subject ID: " + subjectID)
+    print("Session Suffix:  " + session_suffix)
+    r = get(
+        connection,
+        host + "/data/subjects/%s" % subjectID,
+        params={"format": "json", "handler": "values", "columns": "label"},
+    )
+    subject = r.json()["ResultSet"]["Result"][0]["label"]
+    print("Subject label: " + subject)
+    print("------------------------------------------------")
+
+    return project, subject, session_suffix
+
+def prepare_path_prefixes(project, subject, session):
+    # get PI from project name
+    pi_prefix = project.split("_")[0]
+
+    # Paths to export source data in a BIDS friendly way
+    study_prefix = "study-" + project.split("_")[1]
+
+    return pi_prefix.lower(), study_prefix.lower()
 
 def set_logging_level(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:
@@ -394,12 +447,22 @@ async def main():
     # Wait for stdout to be flushed to output file 
     await asyncio.sleep(1)
 
+    # Establish connection 
+    connection = requests.Session()
+    connection.verify = True
+    connection.auth = (user, password)
+
+    host = arg_dict["xnat2bids-args"]["host"]
+    proj, subj, sess = get_project_subject_session(connection, host, session, "-1")
+    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj, sess)
+    
+
     # Launch BIDS Validator after jobs have completed 
     afterok_ids = ":".join(fetch_job_ids())
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 
     # Define bids_experiment_dir
-    bids_experiment_dir = glob.glob(f"{bids_root}/*/*/bids")[0]
+    bids_experiment_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
     # Build shell script for sbatch
     sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
         apptainer exec --no-home -B {bids_experiment_dir} {simg} \

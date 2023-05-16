@@ -252,7 +252,7 @@ def compile_xnat2bids_list(session, arg_dict, user):
     return x2b_param_list, bindings
 
 def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=[]):
-
+    # Compose argument lists for each session 
     for session in arg_dict['xnat2bids-args']['sessions']:
 
         # Compile list of slurm parameters.
@@ -440,13 +440,13 @@ async def main():
     if "sessions" in arg_dict['xnat2bids-args']:
         argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
 
-    # Loop over argument lists for provided sessions.
+    # Launch xnat2bids
     x2b_output = await launch_x2b_jobs(argument_lists, simg)
     jobs = fetch_job_ids(x2b_output)
 
-    # Run bids-validator
+    # Launch bids-validator
     validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
-    fetch_job_ids(validator_output)
+    jobs = fetch_job_ids(validator_output)
 
     logging.info("Launched %d %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
     logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))

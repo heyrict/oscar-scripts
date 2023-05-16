@@ -312,7 +312,7 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
 
 async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
     # Loop over argument lists for provided sessions.
-    needs_dependency = False
+    needs_validation = False
     for args in argument_lists:
         # Compilie slurm and xnat2bids args 
         xnat2bids_param_list = args[0]
@@ -324,6 +324,9 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
 
         # Compile bindings into formated string
         bindings = ' '.join(f"-B {path}" for path in bindings_paths)
+
+        # Set needs_validation if --export-only does not exist
+        if "--export-only" not in xnat2bids_param_list: needs_validation = True 
 
         # Build shell script for sbatch
         sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
@@ -368,7 +371,7 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
         stdout, stderr = await proc.communicate()
         output.append(stdout)
     
-    return output
+    return output, needs_validation
 
 async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):    
 
@@ -447,12 +450,13 @@ async def main():
 
     jobs = []
     # Launch xnat2bids
-    x2b_output = await launch_x2b_jobs(argument_lists, simg)
+    x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
     update_jobs(jobs, x2b_output)
 
     # Launch bids-validator
-    validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
-    update_jobs(jobs, validator_output)
+    if needs_validation:
+        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
+        update_jobs(jobs, validator_output)
 
     logging.info("Launched %d %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
     logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))

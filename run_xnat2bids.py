@@ -139,7 +139,8 @@ def extract_params(param, value):
 
     return ' '.join(arg)
 
-def fetch_job_ids(stdout, jobs = []):
+def fetch_job_ids(stdout):
+    jobs = []
     if isinstance(stdout, bytes):
         stdout = [stdout]
 
@@ -148,6 +149,10 @@ def fetch_job_ids(stdout, jobs = []):
         jobs.append(job_id)
 
     return jobs
+
+def update_jobs(jobs, output):
+    new_jobs = fetch_job_ids(output)
+    jobs.extend(new_jobs)
 
 def merge_config_files(user_cfg, default_cfg):
     user_slurm = user_cfg['slurm-args']
@@ -440,13 +445,14 @@ async def main():
     if "sessions" in arg_dict['xnat2bids-args']:
         argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
 
+    jobs = []
     # Launch xnat2bids
     x2b_output = await launch_x2b_jobs(argument_lists, simg)
-    jobs = fetch_job_ids(x2b_output)
+    update_jobs(jobs, x2b_output)
 
     # Launch bids-validator
     validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
-    jobs = fetch_job_ids(validator_output)
+    update_jobs(jobs, validator_output)
 
     logging.info("Launched %d %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
     logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))

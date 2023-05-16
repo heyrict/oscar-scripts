@@ -18,6 +18,11 @@ from toml import load
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
+
+# Disable DEBUG logging for urllib3
+urllib3_logger = logging.getLogger('urllib3')
+urllib3_logger.setLevel(logging.WARNING)
+
 # PARAM_VAL (--param val)
 # MULTI_VAL (-param 1, --param 2, --param n)
 # FLAG_ONLU (--param)
@@ -53,12 +58,10 @@ def merge_default_params(config_path, default_params):
     user_params = load(config_path)
     return merge_config_files(user_params, default_params)
 
-
 def parse_cli_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", help="path to user config")
-    return parser.parse_args()
-    
+    return parser.parse_args()   
 
 def prompt_user_for_sessions(arg_dict):
     docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
@@ -136,12 +139,14 @@ def extract_params(param, value):
 
     return ' '.join(arg)
 
-def fetch_job_ids():
-    jobs = []
-    with open("x2b_launched_jobs.txt", "r") as f:
-        for line in f:
-            job_id = line.replace("Submitted batch job ", "" ).strip()
-            jobs.append(job_id)
+def fetch_job_ids(stdout, jobs = []):
+    if isinstance(stdout, bytes):
+        stdout = [stdout]
+
+    for line in stdout:
+        job_id = line.replace(b'Submitted batch job ', b'' ).strip().decode('utf-8')
+        jobs.append(job_id)
+
     return jobs
 
 def merge_config_files(user_cfg, default_cfg):
@@ -300,7 +305,7 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
     
     return argument_lists
 
-def launch_x2b_jobs(argument_lists, simg, f, tasks=[]):
+async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
     # Loop over argument lists for provided sessions.
     needs_dependency = False
     for args in argument_lists:
@@ -352,13 +357,15 @@ def launch_x2b_jobs(argument_lists, simg, f, tasks=[]):
             "command": sbatch_cmd_without_password
         })
         
-        # Run xnat2bids asynchronously.
-        task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_cmd, stdout=f))
-        tasks.append(task)
-    
-    return tasks
+        # Run xnat2bids 
+        proc = await asyncio.create_subprocess_exec(*sbatch_cmd, stdout=asyncio.subprocess.PIPE)
 
-def launch_bids_validator(arg_dict, tasks, user, password, bids_root):    
+        stdout, stderr = await proc.communicate()
+        output.append(stdout)
+    
+    return output
+
+async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):    
 
     # Establish connection 
     connection = requests.Session()
@@ -393,14 +400,16 @@ def launch_bids_validator(arg_dict, tasks, user, password, bids_root):
     slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
 
     # Fetch JOB-IDs of xnat2bids jobs to wait upon
-    afterok_ids = ":".join(fetch_job_ids())
+    afterok_ids = ":".join(job_deps)
 
-    sbatch_bids_val_cmd = shlex.split(f"sbatch -Q -d afterok:{afterok_ids} {slurm_options} \
+    sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
         --wrap {sbatch_bids_val_script}") 
 
-    # Run xnat2bids asynchronously.
-    task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_bids_val_cmd))
-    tasks.append(task)
+    # Run bids-validator
+    proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
+
+    stdout, stderr = await proc.communicate()
+    return stdout
 
 async def main():
     # Instantiate argument parser
@@ -431,26 +440,16 @@ async def main():
     if "sessions" in arg_dict['xnat2bids-args']:
         argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
 
-    # Open output file to field stdout from slurm
-    f = open("x2b_launched_jobs.txt", "w+")
-
     # Loop over argument lists for provided sessions.
-    tasks = launch_x2b_jobs(argument_lists, simg, f)
-
-    # Wait for stdout to be flushed to output file 
-    await asyncio.sleep(1)
+    x2b_output = await launch_x2b_jobs(argument_lists, simg)
+    jobs = fetch_job_ids(x2b_output)
 
     # Run bids-validator
-    launch_bids_validator(arg_dict, tasks, user, password, bids_root)
+    validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
+    fetch_job_ids(validator_output)
 
-    # Wait for all subprocess tasks to complete
-    await asyncio.gather(*tasks)
-
-    # Close and remove output file    
-    f.close()
-    os.remove(f.name)
-
-    logging.info("Launched %d %s", len(tasks), "jobs" if len(tasks) > 1 else "job")
+    logging.info("Launched %d %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
+    logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))
     logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":

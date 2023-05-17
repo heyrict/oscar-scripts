@@ -325,9 +325,9 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
         if "--export-only" not in xnat2bids_param_list: needs_validation = True 
 
         # Build shell script for sbatch
-        sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
+        sbatch_script = f'\'$(cat << EOF #!/bin/sh\n \
             apptainer exec --no-home {bindings} {simg} \
-            xnat2bids {xnat2bids_options}\nEOF\n)\""
+            xnat2bids {xnat2bids_options}\nEOF\n)\''
 
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch {slurm_options} \
@@ -382,6 +382,9 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     proj, subj = get_project_subject_session(connection, host, session)
     pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
 
+    # Close connection
+    connection.close()
+    
     # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 

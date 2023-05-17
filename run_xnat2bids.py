@@ -150,10 +150,6 @@ def fetch_job_ids(stdout):
 
     return jobs
 
-def update_jobs(jobs, output):
-    new_jobs = fetch_job_ids(output)
-    jobs.extend(new_jobs)
-
 def merge_config_files(user_cfg, default_cfg):
     user_slurm = user_cfg['slurm-args']
     default_slurm = default_cfg['slurm-args']
@@ -448,26 +444,22 @@ async def main():
     if "sessions" in arg_dict['xnat2bids-args']:
         argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
 
-    jobs = []
     # Launch xnat2bids
     x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
-    update_jobs(jobs, x2b_output)
+    x2b_jobs = fetch_job_ids(x2b_output)
 
     # Launch bids-validator
     if needs_validation:
-        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
-        update_jobs(jobs, validator_output)
+        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
+        validator_jobs = fetch_job_ids(validator_output)
 
     # Summary Logging 
-    if needs_validation:
-        logging.info("Launched %d xnat2bids %s", len(jobs)-1, "jobs" if len(jobs)-1 > 1 else "job")
-        logging.info("Job %s: %s", "IDs" if len(jobs)-1 > 1 else "ID", ' '.join(jobs[:-1]))
-        logging.info("Launched bids-validator to check BIDS compliance")
-        logging.info("Job ID: %s", jobs[-1])
-    else:
-        logging.info("Launched %d xnat2bids %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
-        logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))
+    logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
+    logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
 
+    if needs_validation:
+        logging.info("Launched bids-validator to check BIDS compliance")
+        logging.info("Job ID: %s", ''.join(validator_jobs))
 
     logging.info("Processed Scans Located At: %s", bids_root)
 

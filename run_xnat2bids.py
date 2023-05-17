@@ -8,6 +8,7 @@ import glob
 import logging
 import os
 import pathlib
+import requests
 import shlex
 import shutil
 import subprocess
@@ -17,6 +18,10 @@ from toml import load
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
+
+# Disable DEBUG logging for urllib3
+urllib3_logger = logging.getLogger('urllib3')
+urllib3_logger.setLevel(logging.WARNING)
 
 # PARAM_VAL (--param val)
 # MULTI_VAL (-param 1, --param 2, --param n)
@@ -40,7 +45,65 @@ xnat2bids_params = {
     "overwrite": (ParamType.FLAG_ONLY, False),
     "skip-export": (ParamType.FLAG_ONLY, False),
     "verbose": (ParamType.MULTI_FLAG, False),
-}  
+} 
+
+def get_user_credentials():
+    user = input('Enter XNAT Username: ')
+    password = getpass('Enter Password: ')
+    return user, password
+
+def merge_default_params(config_path, default_params):
+    if config_path is None:
+        return default_params
+    user_params = load(config_path)
+    return merge_config_files(user_params, default_params)
+
+def parse_cli_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", help="path to user config")
+    return parser.parse_args()   
+
+def prompt_user_for_sessions(arg_dict):
+    docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
+    logging.warning("No sessions were provided in the configuration file. Please specify session(s) to process.")
+    logging.info("For helpful guidance, check out our docs at %s", docs)
+    sessions_input = input("Enter Session(s) (comma-separated): ")
+    arg_dict['xnat2bids-args']['sessions'] = [s.strip() for s in sessions_input.split(',')]
+
+def get(connection, url, **kwargs):
+    r = connection.get(url, **kwargs)
+    r.raise_for_status()
+    return r
+
+def get_project_subject_session(connection, host, session):
+    """Get project ID and subject ID from session JSON
+    If calling within XNAT, only session is passed"""
+    r = get(
+        connection,
+        host + "/data/experiments/%s" % session,
+        params={"format": "json", "handler": "values", "columns": "project,subject_ID,label"},
+    )
+    sessionValuesJson = r.json()["ResultSet"]["Result"][0]
+    project = sessionValuesJson["project"]
+    subjectID = sessionValuesJson["subject_ID"]
+
+    r = get(
+        connection,
+        host + "/data/subjects/%s" % subjectID,
+        params={"format": "json", "handler": "values", "columns": "label"},
+    )
+    subject = r.json()["ResultSet"]["Result"][0]["label"]
+
+    return project, subject
+
+def prepare_path_prefixes(project, subject):
+    # get PI from project name
+    pi_prefix = project.split("_")[0]
+
+    # Paths to export source data in a BIDS friendly way
+    study_prefix = "study-" + project.split("_")[1]
+
+    return pi_prefix.lower(), study_prefix.lower()
 
 def set_logging_level(x2b_arglist: list):
     if "--verbose"  in x2b_arglist:
@@ -75,6 +138,17 @@ def extract_params(param, value):
             arg.append(f"--{param} {v}")
 
     return ' '.join(arg)
+
+def fetch_job_ids(stdout):
+    jobs = []
+    if isinstance(stdout, bytes):
+        stdout = [stdout]
+
+    for line in stdout:
+        job_id = line.replace(b'Submitted batch job ', b'' ).strip().decode('utf-8')
+        jobs.append(job_id)
+
+    return jobs
 
 def merge_config_files(user_cfg, default_cfg):
     user_slurm = user_cfg['slurm-args']
@@ -178,110 +252,63 @@ def compile_xnat2bids_list(session, arg_dict, user):
     x2b_param_list = parse_x2b_params(x2b_param_dict, session, bindings)
     return x2b_param_list, bindings
 
+def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=[]):
+    # Compose argument lists for each session 
+    for session in arg_dict['xnat2bids-args']['sessions']:
 
-async def main():
-    # Instantiate argument parserß
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", help="path to user config")
-    args = parser.parse_args()
+        # Compile list of slurm parameters.
+        slurm_param_list = compile_slurm_list(arg_dict, user)
 
-    # Load default config file into dictionary
-    script_dir = pathlib.Path(__file__).parent.resolve()
-    default_params = load(f'{script_dir}/x2b_default_config.toml')
+        # Fetch compiled xnat2bids and slurm parameter lists
+        x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
 
-    # Set arg_dict. If user provides config, merge dictionaries.
-    if args.config is None:
-        arg_dict = default_params
-    else:
-        # Load user configuration
-        user_params = load(args.config)
+        # Insert username and password into x2b_param_list
+        x2b_param_list.insert(2, f"--user {user}")
+        x2b_param_list.insert(3, f"--pass {password}")
 
-        # Merge with default configuration
-        arg_dict = merge_config_files(user_params, default_params)
+        # Define output for logs
+        if not ('output' in arg_dict['slurm-args']):
+            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+            arg = f"--output {output}"
+            slurm_param_list.append(arg)
+        else:
+            output = arg_dict['slurm-args']['output']
 
-    # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
-    if 'sessions' not in arg_dict['xnat2bids-args'] and "dcm2bids-args" not in arg_dict:
-        docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
-        logging.warning("No sessions were provided in the configuration file. Please specify session(s) to process.")
-        logging.info("For helpful guidance, check out our docs at %s", docs)
-        sessions_input = input("Enter Session(s) (comma-separated): ")
-        arg_dict['xnat2bids-args']['sessions'] = [s.strip() for s in sessions_input.split(',')]
+        if not (os.path.exists(os.path.dirname(output))):
+            os.makedirs(os.path.dirname(output))
+
+        # Define bids root directory
+        if 'bids_root' in arg_dict['xnat2bids-args']:
+            bids_root = x2b_param_list[1]
         
+        x2b_param_list.insert(1, bids_root)
+        bindings.append(bids_root)
 
-    # Fetch user credentials 
-    user = input('Enter XNAT Username: ')
-    password = getpass('Enter Password: ')
+        if not (os.path.exists(bids_root)):
+            os.makedirs(bids_root)  
 
-    # Assemble parameter lists per session
-    argument_lists = []
+        # Store xnat2bids, slurm, and binding paramters as tuple.
+        argument_lists.append((x2b_param_list, slurm_param_list, bindings))
 
-    # Initialize bids_root for non-local use
-    bids_root = f"/users/{user}/bids-export/"
+        # Set logging level per session verbosity. 
+        set_logging_level(x2b_param_list)
 
-    # Initialize version and singularity image for non-local use
-    version = fetch_latest_version()
-    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+        # Remove the password parameter from the x2b_param_list
+        x2b_param_list_without_password = [param for param in x2b_param_list if not param.startswith('--pass')]
 
-    # Compile parameter list per session for calls to xnat2bids
-    if "sessions" in arg_dict['xnat2bids-args']:
-        for session in arg_dict['xnat2bids-args']['sessions']:
+        logging.debug({
+        "message": "Argument List",
+        "session": session,
+            "slurm_param_list": slurm_param_list,
+        "x2b_param_list": x2b_param_list_without_password,
 
-            # Compile list of slurm parameters.
-            slurm_param_list = compile_slurm_list(arg_dict, user)
+        })
+    
+    return argument_lists
 
-            # Fetch compiled xnat2bids and slurm parameter lists
-            x2b_param_list, bindings = compile_xnat2bids_list(session, arg_dict, user)
-
-            # Insert username and password into x2b_param_list
-            x2b_param_list.insert(2, f"--user {user}")
-            x2b_param_list.insert(3, f"--pass {password}")
-
-            # Fetch latest version if not provided
-            if'version' in arg_dict['xnat2bids-args']:
-                version = arg_dict['xnat2bids-args']['version']
-                simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
-
-            # Define output for logs
-            if not ('output' in arg_dict['slurm-args']):
-                output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
-                arg = f"--output {output}"
-                slurm_param_list.append(arg)
-            else:
-                output = arg_dict['slurm-args']['output']
-
-            if not (os.path.exists(os.path.dirname(output))):
-                os.makedirs(os.path.dirname(output))
-
-            # Define bids root directory
-            if 'bids_root' in arg_dict['xnat2bids-args']:
-                bids_root = x2b_param_list[1]
-            
-            x2b_param_list.insert(1, bids_root)
-            bindings.append(bids_root)
-
-            if not (os.path.exists(bids_root)):
-                os.makedirs(bids_root)  
-
-            # Store xnat2bids, slurm, and binding paramters as tuple.
-            argument_lists.append((x2b_param_list, slurm_param_list, bindings))
-
-            # Set logging level per session verbosity. 
-            set_logging_level(x2b_param_list)
-
-            # Remove the password parameter from the x2b_param_list
-            x2b_param_list_without_password = [param for param in x2b_param_list if not param.startswith('--pass')]
-
-            logging.debug({
-            "message": "Argument List",
-            "session": session,
-                "slurm_param_list": slurm_param_list,
-            "x2b_param_list": x2b_param_list_without_password,
-
-            })
-
+async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
     # Loop over argument lists for provided sessions.
-    tasks = []
-    needs_dependency = False
+    needs_validation = False
     for args in argument_lists:
         # Compilie slurm and xnat2bids args 
         xnat2bids_param_list = args[0]
@@ -294,13 +321,16 @@ async def main():
         # Compile bindings into formated string
         bindings = ' '.join(f"-B {path}" for path in bindings_paths)
 
+        # Set needs_validation if --export-only does not exist
+        if "--export-only" not in xnat2bids_param_list: needs_validation = True 
+
         # Build shell script for sbatch
-        sbatch_script = f"\"$(cat << EOF #!/bin/sh\n \
+        sbatch_script = f'\'$(cat << EOF #!/bin/sh\n \
             apptainer exec --no-home {bindings} {simg} \
-            xnat2bids {xnat2bids_options}\nEOF\n)\""
+            xnat2bids {xnat2bids_options}\nEOF\n)\''
 
         # Process command string for SRUN
-        sbatch_cmd = shlex.split(f"sbatch -Q {slurm_options} \
+        sbatch_cmd = shlex.split(f"sbatch {slurm_options} \
             --wrap {sbatch_script}")    
 
         # Set logging level per session verbosity. 
@@ -331,15 +361,109 @@ async def main():
             "command": sbatch_cmd_without_password
         })
         
-        # Run xnat2bids asynchronously.
-        task = asyncio.create_task(asyncio.create_subprocess_exec(*sbatch_cmd))
-        tasks.append(task)
+        # Run xnat2bids 
+        proc = await asyncio.create_subprocess_exec(*sbatch_cmd, stdout=asyncio.subprocess.PIPE)
 
-    # Wait for all subprocess tasks to complete
-    await asyncio.gather(*tasks)
+        stdout, stderr = await proc.communicate()
+        output.append(stdout)
+    
+    return output, needs_validation
 
+async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):    
 
-    logging.info("Launched %d %s", len(tasks), "jobs" if len(tasks) > 1 else "job")
+    # Establish connection 
+    connection = requests.Session()
+    connection.verify = True
+    connection.auth = (user, password)
+
+    # Fetch pi and study prefixes for BIDS path
+    host = arg_dict["xnat2bids-args"]["host"]
+    session = arg_dict["xnat2bids-args"]["sessions"][0]
+    proj, subj = get_project_subject_session(connection, host, session)
+    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
+
+    # Close connection
+    connection.close()
+    
+    # Define bids-validator singularity image path
+    simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
+
+    # Define bids_experiment_dir
+    bids_experiment_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+
+    # Build shell script for sbatch
+    sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
+        apptainer exec --no-home -B {bids_experiment_dir} {simg} \
+        bids-validator {bids_experiment_dir}\nEOF\n)\""
+
+    # Compile list of slurm parameters.
+    bids_val_slurm_params = compile_slurm_list(arg_dict, user)
+    output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+    arg = f"--output {output}"
+    bids_val_slurm_params.append(arg)
+    slurm_options = ' '.join(bids_val_slurm_params)
+
+    # Process command string for SRUN
+    slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
+
+    # Fetch JOB-IDs of xnat2bids jobs to wait upon
+    afterok_ids = ":".join(job_deps)
+
+    sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
+        --wrap {sbatch_bids_val_script}") 
+
+    # Run bids-validator
+    proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
+
+    stdout, stderr = await proc.communicate()
+    return stdout
+
+async def main():
+    # Instantiate argument parser
+    args = parse_cli_arguments()
+
+    # Load default config file into dictionary
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    default_params = load(f'{script_dir}/x2b_default_config.toml')
+
+    # Set arg_dict. If user provides config, merge dictionaries.
+    arg_dict = merge_default_params(args.config, default_params)
+
+    # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
+    if 'sessions' not in arg_dict['xnat2bids-args']:
+        prompt_user_for_sessions(arg_dict)
+        
+    # Fetch user credentials 
+    user, password = get_user_credentials()
+
+    # Initialize bids_root for non-local use
+    bids_root = f"/users/{user}/bids-export/"
+
+    # Initialize version and singularity image for non-local use
+    version = fetch_latest_version()
+    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+
+    # Compile parameter list per session for calls to xnat2bids
+    if "sessions" in arg_dict['xnat2bids-args']:
+        argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
+
+    # Launch xnat2bids
+    x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
+    x2b_jobs = fetch_job_ids(x2b_output)
+
+    # Launch bids-validator
+    if needs_validation:
+        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
+        validator_jobs = fetch_job_ids(validator_output)
+
+    # Summary Logging 
+    logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
+    logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
+
+    if needs_validation:
+        logging.info("Launched bids-validator to check BIDS compliance")
+        logging.info("Job ID: %s", ''.join(validator_jobs))
+
     logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":

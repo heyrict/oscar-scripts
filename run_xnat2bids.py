@@ -458,8 +458,14 @@ async def main():
         validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, jobs)
         update_jobs(jobs, validator_output)
 
-    logging.info("Launched %d %s", len(jobs), "jobs" if len(jobs) > 1 else "job")
-    logging.info("Job %s: %s", "IDs" if len(jobs) > 1 else "ID", ' '.join(jobs))
+    # Summary Logging 
+    logging.info("Launched %d xnat2bids %s", len(jobs)-1, "jobs" if len(jobs)-1 > 1 else "job")
+    logging.info("Job %s: %s", "IDs" if len(jobs)-1 > 1 else "ID", ' '.join(jobs[:-1]))
+
+    if needs_validation:
+        logging.info("Launched bids-validator to check BIDS compliance")
+        logging.info("Job ID: %s", jobs[-1])
+
     logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":

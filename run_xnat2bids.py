@@ -401,6 +401,7 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
     arg = f"--output {output}"
     bids_val_slurm_params.append(arg)
+    bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
     slurm_options = ' '.join(bids_val_slurm_params)
 
     # Process command string for SRUN

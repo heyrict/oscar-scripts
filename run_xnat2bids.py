@@ -280,9 +280,9 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
         # Define bids root directory
         if 'bids_root' in arg_dict['xnat2bids-args']:
             bids_root = x2b_param_list[1]
-        
-        x2b_param_list.insert(1, bids_root)
-        bindings.append(bids_root)
+        else:
+            x2b_param_list.insert(1, bids_root)
+            bindings.append(bids_root)
 
         if not (os.path.exists(bids_root)):
             os.makedirs(bids_root)  
@@ -304,7 +304,7 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
 
         })
     
-    return argument_lists
+    return argument_lists, bids_root
 
 async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
     # Loop over argument lists for provided sessions.
@@ -445,7 +445,7 @@ async def main():
 
     # Compile parameter list per session for calls to xnat2bids
     if "sessions" in arg_dict['xnat2bids-args']:
-        argument_lists = assemble_argument_lists(arg_dict, user, password, bids_root)
+        argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
 
     # Launch xnat2bids
     x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)

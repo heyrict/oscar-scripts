@@ -398,9 +398,17 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
 
     # Compile list of slurm parameters.
     bids_val_slurm_params = compile_slurm_list(arg_dict, user)
-    output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
-    arg = f"--output {output}"
-    bids_val_slurm_params.append(arg)
+    if not ('output' in arg_dict['slurm-args']):
+        val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+        arg = f"--output {val_output}"
+        bids_val_slurm_params.append(arg)
+    else:
+        x2b_output = arg_dict['slurm-args']['output'].split("/")
+        x2b_output[-1] = "%x-%J.txt"
+        val_output = "/".join(x2b_output)
+        bids_val_slurm_params = [f"--output {val_output}" if "output" in item else item for item in bids_val_slurm_params]
+
+    bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
     slurm_options = ' '.join(bids_val_slurm_params)
 
     # Process command string for SRUN

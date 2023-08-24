@@ -96,6 +96,33 @@ def get_project_subject_session(connection, host, session):
 
     return project, subject
 
+def get_sessions_from_project_subjects(connection, host, project, subjects):
+    sessions = []
+    for subj in subjects:
+        print("------------------------------------------------")
+        print("Get projects information")
+        r = get(
+            connection,
+            host + f"/data/projects/{project}/subjects/{subj}/experiments",
+            params={"format": "json"},
+        )
+        projectValues = r.json()["ResultSet"]["Result"]
+        sessions.extend(extractSessions(projectValues))
+
+        return sessions
+
+def get_sessions_from_project(connection, host, project):
+    print("------------------------------------------------")
+    print("Get projects information: ", project)
+    r = get(
+        connection,
+        host + f"/data/projects/{project}/experiments",
+        params={"format": "json"},
+    )
+    projectValues = r.json()["ResultSet"]["Result"]
+
+    return extractSessions(projectValues)
+
 def prepare_path_prefixes(project, subject):
     # get PI from project name
     pi_prefix = project.split("_")[0]
@@ -139,6 +166,12 @@ def extract_params(param, value):
 
     return ' '.join(arg)
 
+def extractSessions(results):
+    sessions = []
+    for experiment in results:
+        sessions.append(experiment['ID'])
+    return sessions
+
 def fetch_job_ids(stdout):
     jobs = []
     if isinstance(stdout, bytes):
@@ -149,6 +182,32 @@ def fetch_job_ids(stdout):
         jobs.append(job_id)
 
     return jobs
+
+def fetch_requested_sessions(arg_dict, user, password):
+
+    # Establish connection 
+    connection = requests.Session()
+    connection.verify = True
+    connection.auth = (user, password)
+
+    host = arg_dict["xnat2bids-args"]["host"]
+
+    if 'project' in arg_dict['xnat2bids-args']:
+        project = arg_dict['xnat2bids-args']['project']
+    
+        if 'subjects' in arg_dict['xnat2bids-args']:
+            subjects = arg_dict['xnat2bids-args']['subjects']
+            sessions = get_sessions_from_project_subjects(connection, host, project, subjects)
+
+        else:
+            sessions = get_sessions_from_project(connection, host, project)
+
+    connection.close()
+
+    if "sessions" in arg_dict['xnat2bids-args']:
+        sessions.extend(arg_dict['xnat2bids-args']['sessions'])
+    
+    return sessions
 
 def merge_config_files(user_cfg, default_cfg):
     user_slurm = user_cfg['slurm-args']
@@ -436,10 +495,6 @@ async def main():
 
     # Set arg_dict. If user provides config, merge dictionaries.
     arg_dict = merge_default_params(args.config, default_params)
-
-    # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
-    if 'sessions' not in arg_dict['xnat2bids-args']:
-        prompt_user_for_sessions(arg_dict)
         
     # Fetch user credentials 
     user, password = get_user_credentials()
@@ -451,9 +506,13 @@ async def main():
     version = fetch_latest_version()
     simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-    # Compile parameter list per session for calls to xnat2bids
-    if "sessions" in arg_dict['xnat2bids-args']:
-        argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+    if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
+        sessions = fetch_requested_sessions(arg_dict, user, password)
+        arg_dict['xnat2bids-args']['sessions'] = sessions
+    else:
+        prompt_user_for_sessions(arg_dict)
+
+    argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
 
     # Launch xnat2bids
     x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)

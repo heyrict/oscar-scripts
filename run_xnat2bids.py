@@ -428,6 +428,9 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
 
 async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):    
 
+    bids_experiments = []
+    output = []
+
     # Establish connection 
     connection = requests.Session()
     connection.verify = True
@@ -435,9 +438,15 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
 
     # Fetch pi and study prefixes for BIDS path
     host = arg_dict["xnat2bids-args"]["host"]
-    session = arg_dict["xnat2bids-args"]["sessions"][0]
-    proj, subj = get_project_subject_session(connection, host, session)
-    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
+    for session in arg_dict["xnat2bids-args"]["sessions"]:
+        proj, subj = get_project_subject_session(connection, host, session)
+        pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
+        
+        # Define bids_experiment_dir
+        bids_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+
+        if bids_dir not in bids_experiments:
+            bids_experiments.append(bids_dir)
 
     # Close connection
     connection.close()
@@ -445,43 +454,44 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 
-    # Define bids_experiment_dir
-    bids_experiment_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+    for bids_experiment_dir in bids_experiments:
 
-    # Build shell script for sbatch
-    sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
-        apptainer exec --no-home -B {bids_experiment_dir} {simg} \
-        bids-validator {bids_experiment_dir}\nEOF\n)\""
+        # Build shell script for sbatch
+        sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
+            apptainer exec --no-home -B {bids_experiment_dir} {simg} \
+            bids-validator {bids_experiment_dir}\nEOF\n)\""
 
-    # Compile list of slurm parameters.
-    bids_val_slurm_params = compile_slurm_list(arg_dict, user)
-    if not ('output' in arg_dict['slurm-args']):
-        val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
-        arg = f"--output {val_output}"
-        bids_val_slurm_params.append(arg)
-    else:
-        x2b_output = arg_dict['slurm-args']['output'].split("/")
-        x2b_output[-1] = "%x-%J.txt"
-        val_output = "/".join(x2b_output)
-        bids_val_slurm_params = [f"--output {val_output}" if "output" in item else item for item in bids_val_slurm_params]
+        # Compile list of slurm parameters.
+        bids_val_slurm_params = compile_slurm_list(arg_dict, user)
+        if not ('output' in arg_dict['slurm-args']):
+            val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+            arg = f"--output {val_output}"
+            bids_val_slurm_params.append(arg)
+        else:
+            x2b_output = arg_dict['slurm-args']['output'].split("/")
+            x2b_output[-1] = "%x-%J.txt"
+            val_output = "/".join(x2b_output)
+            bids_val_slurm_params = [f"--output {val_output}" if "output" in item else item for item in bids_val_slurm_params]
 
-    bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
-    slurm_options = ' '.join(bids_val_slurm_params)
+        bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
+        slurm_options = ' '.join(bids_val_slurm_params)
 
-    # Process command string for SRUN
-    slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
+        # Process command string for SRUN
+        slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
 
-    # Fetch JOB-IDs of xnat2bids jobs to wait upon
-    afterok_ids = ":".join(job_deps)
+        # Fetch JOB-IDs of xnat2bids jobs to wait upon
+        afterok_ids = ":".join(job_deps)
 
-    sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
-        --wrap {sbatch_bids_val_script}") 
+        sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
+            --wrap {sbatch_bids_val_script}") 
 
-    # Run bids-validator
-    proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
+        # Run bids-validator
+        proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
 
-    stdout, stderr = await proc.communicate()
-    return stdout
+        stdout, stderr = await proc.communicate()
+        output.append(stdout)
+
+    return output
 
 async def main():
     # Instantiate argument parser
@@ -526,8 +536,8 @@ async def main():
     logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
 
     if needs_validation:
-        logging.info("Launched bids-validator to check BIDS compliance")
-        logging.info("Job ID: %s", ''.join(validator_jobs))
+        logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
+        logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
 
     logging.info("Processed Scans Located At: %s", bids_root)
 

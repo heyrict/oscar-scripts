@@ -98,9 +98,8 @@ def get_project_subject_session(connection, host, session):
 
 def get_sessions_from_project_subjects(connection, host, project, subjects):
     sessions = []
+
     for subj in subjects:
-        print("------------------------------------------------")
-        print("Get projects information")
         r = get(
             connection,
             host + f"/data/projects/{project}/subjects/{subj}/experiments",
@@ -109,11 +108,10 @@ def get_sessions_from_project_subjects(connection, host, project, subjects):
         projectValues = r.json()["ResultSet"]["Result"]
         sessions.extend(extractSessions(projectValues))
 
-        return sessions
+    return sessions
 
 def get_sessions_from_project(connection, host, project):
-    print("------------------------------------------------")
-    print("Get projects information: ", project)
+
     r = get(
         connection,
         host + f"/data/projects/{project}/experiments",

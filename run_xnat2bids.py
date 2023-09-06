@@ -119,9 +119,19 @@ def get_sessions_from_project(connection, host, project):
         host + f"/data/projects/{project}/experiments",
         params={"format": "json"},
     )
-    projectValues = r.json()["ResultSet"]["Result"]
+    
+    return r.json()["ResultSet"]["Result"]
 
-    return projectValues
+def fetch_session_data(connection, host, session_id):
+
+    r = get(
+        connection,
+        host + f"/data/experiments/{session_id}",
+        params={"format": "json"},
+    )
+
+    print(r.json()['items'][0]['data_fields'])
+    return r.json()["items"][0]["data_fields"]
 
 def prepare_path_prefixes(project, subject):
     # get PI from project name
@@ -183,9 +193,9 @@ def fetch_job_ids(stdout):
 
     return jobs
 
-def generate_diff_report(bids_root):
+def diff_data_directory(bids_root):
 
-    missing_sessions = {}
+    missing_sessions = []
     # Fetch user credentials 
     user, password = get_user_credentials()
 
@@ -199,24 +209,46 @@ def generate_diff_report(bids_root):
     projects = [proj.name for proj in os.scandir(bids_root) if proj.is_dir()]
 
     for project in projects:
+
         studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{project}")]
 
         for study in studies:
+
             proj_study = f"{project}_{study}".upper()
             sessions = get_sessions_from_project(connection, host, proj_study)
 
-            for experiment in results:
-                if experiment['label'].contains("_"):
+            for experiment in sessions:
+                if "_" in experiment['label']:
+
                     subj, sess = experiment['label'].split("_")
-
                     ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
-                    if not (os.path.exists(ses_path))
-                        missing_sessions.update({'project': project, 'study': study, 'subject': subj, 'sess': sess, 'ID': experiment['ID']} )
 
-                # else:  How do I want to handle the case if lable improperly set?
+                    if not (os.path.exists(ses_path)):
+                        missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
 
-                    
-                print(sessions)
+                else:
+        
+                    session_data = fetch_session_data(connection, host, experiment['ID'])
+                    project, study = session_data['project'].split("_")
+                    missing_sessions.append({'project': project, 'study': study, 'subject': session_data['dcmPatientId'], 'session': '', 'ID': session_data['ID']} )
+
+    connection.close()
+
+    return missing_sessions
+
+def generate_diff_report(sessions_to_update):
+
+    for session_data in sessions_to_update:
+        project = session_data['project']
+        study = session_data['study']
+        subject = session_data['subject']
+        session = session_data['session']
+        ID = session_data['ID']
+
+        if session == '':
+            logging.info(f"Missing session information for {project}/{study}/{subject} (ID: {ID})")
+        else:
+            logging.info(f"Session {session} found for {project}/{study}/{subject} (ID: {ID})")
 
 
 def fetch_requested_sessions(arg_dict, user, password):
@@ -537,7 +569,8 @@ async def main():
 
     if (args.diff):
         if (args.bids_root) and (os.path.exists(args.bids_root)):
-            generate_diff_report(args.bids_root)
+            sessions_to_update = diff_data_directory(args.bids_root)
+            generate_diff_report(sessions_to_update)
     else:
 
         # Load default config file into dictionary

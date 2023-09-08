@@ -122,17 +122,6 @@ def get_sessions_from_project(connection, host, project):
     
     return r.json()["ResultSet"]["Result"]
 
-def fetch_session_data(connection, host, session_id):
-
-    r = get(
-        connection,
-        host + f"/data/experiments/{session_id}",
-        params={"format": "json"},
-    )
-
-    print(r.json()['items'][0]['data_fields'])
-    return r.json()["items"][0]["data_fields"]
-
 def prepare_path_prefixes(project, subject):
     # get PI from project name
     pi_prefix = project.split("_")[0]

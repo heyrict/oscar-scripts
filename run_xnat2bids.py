@@ -219,18 +219,16 @@ def diff_data_directory(bids_root):
 
             for experiment in sessions:
                 if "_" in experiment['label']:
-
                     subj, sess = experiment['label'].split("_")
-                    ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
-
-                    if not (os.path.exists(ses_path)):
-                        missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
 
                 else:
-        
-                    session_data = fetch_session_data(connection, host, experiment['ID'])
-                    project, study = session_data['project'].split("_")
-                    missing_sessions.append({'project': project, 'study': study, 'subject': session_data['dcmPatientId'], 'session': '', 'ID': session_data['ID']} )
+                    subj = experiment['label']
+                    sess = "01"
+
+                ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
+
+                if not (os.path.exists(ses_path)):
+                    missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
 
     connection.close()
 

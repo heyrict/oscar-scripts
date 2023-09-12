@@ -34,18 +34,22 @@ class ParamType(Enum):
 
 # param_name: (param_type, needs_binding)
 xnat2bids_params = {
-    "bids_root": (ParamType.PARAM_VAL, True),
     "bidsmap-file": (ParamType.PARAM_VAL, True),
-    "host": (ParamType.PARAM_VAL, False),
-    "log-id": (ParamType.PARAM_VAL, False),
-    "version": (ParamType.PARAM_VAL, False),
-    "includeseq": (ParamType.MULTI_VAL, False),
-    "skipseq": (ParamType.MULTI_VAL, False),
+    "bids_root": (ParamType.PARAM_VAL, True),
+    "cleanup": (ParamType.FLAG_ONLY, False),
     "export-only": (ParamType.FLAG_ONLY, False),
+    "host": (ParamType.PARAM_VAL, False),
+    "includeseq": (ParamType.MULTI_VAL, False),
+    "log-id": (ParamType.PARAM_VAL, False),
     "overwrite": (ParamType.FLAG_ONLY, False),
+    "project": (ParamType.PARAM_VAL, False),
+    "sessions": (ParamType.MULTI_VAL, False),
     "skip-export": (ParamType.FLAG_ONLY, False),
+    "skipseq": (ParamType.MULTI_VAL, False),
+    "subjects": (ParamType.MULTI_VAL, False),
+    "version": (ParamType.PARAM_VAL, False),
     "verbose": (ParamType.MULTI_FLAG, False),
-} 
+}
 
 def get_user_credentials():
     user = input('Enter XNAT Username: ')
@@ -96,6 +100,31 @@ def get_project_subject_session(connection, host, session):
 
     return project, subject
 
+def get_sessions_from_project_subjects(connection, host, project, subjects):
+    sessions = []
+
+    for subj in subjects:
+        r = get(
+            connection,
+            host + f"/data/projects/{project}/subjects/{subj}/experiments",
+            params={"format": "json"},
+        )
+        projectValues = r.json()["ResultSet"]["Result"]
+        sessions.extend(extractSessions(projectValues))
+
+    return sessions
+
+def get_sessions_from_project(connection, host, project):
+
+    r = get(
+        connection,
+        host + f"/data/projects/{project}/experiments",
+        params={"format": "json"},
+    )
+    projectValues = r.json()["ResultSet"]["Result"]
+
+    return extractSessions(projectValues)
+
 def prepare_path_prefixes(project, subject):
     # get PI from project name
     pi_prefix = project.split("_")[0]
@@ -139,6 +168,12 @@ def extract_params(param, value):
 
     return ' '.join(arg)
 
+def extractSessions(results):
+    sessions = []
+    for experiment in results:
+        sessions.append(experiment['ID'])
+    return sessions
+
 def fetch_job_ids(stdout):
     jobs = []
     if isinstance(stdout, bytes):
@@ -149,6 +184,34 @@ def fetch_job_ids(stdout):
         jobs.append(job_id)
 
     return jobs
+
+def fetch_requested_sessions(arg_dict, user, password):
+    # Initialize sessions list
+    sessions = []
+
+    # Establish connection 
+    connection = requests.Session()
+    connection.verify = True
+    connection.auth = (user, password)
+
+    host = arg_dict["xnat2bids-args"]["host"]
+
+    if 'project' in arg_dict['xnat2bids-args']:
+        project = arg_dict['xnat2bids-args']['project']
+    
+        if 'subjects' in arg_dict['xnat2bids-args']:
+            subjects = arg_dict['xnat2bids-args']['subjects']
+            sessions = get_sessions_from_project_subjects(connection, host, project, subjects)
+
+        else:
+            sessions = get_sessions_from_project(connection, host, project)
+
+    connection.close()
+
+    if "sessions" in arg_dict['xnat2bids-args']:
+        sessions.extend(arg_dict['xnat2bids-args']['sessions'])
+    
+    return sessions
 
 def merge_config_files(user_cfg, default_cfg):
     user_slurm = user_cfg['slurm-args']
@@ -192,7 +255,9 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
 
     for param, value in xnat2bids_dict.items():
         if param not in xnat2bids_params:
-            continue
+            logging.info(f"Invalid parameter {param} in configuration file.")
+            logging.info("Please resolve invalid parameters before running.")
+            exit()
         if value == "" or value is  None:
             continue
         if param in positional_args:
@@ -371,6 +436,9 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
 
 async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):    
 
+    bids_experiments = []
+    output = []
+
     # Establish connection 
     connection = requests.Session()
     connection.verify = True
@@ -378,9 +446,15 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
 
     # Fetch pi and study prefixes for BIDS path
     host = arg_dict["xnat2bids-args"]["host"]
-    session = arg_dict["xnat2bids-args"]["sessions"][0]
-    proj, subj = get_project_subject_session(connection, host, session)
-    pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
+    for session in arg_dict["xnat2bids-args"]["sessions"]:
+        proj, subj = get_project_subject_session(connection, host, session)
+        pi_prefix, study_prefix = prepare_path_prefixes(proj, subj)
+        
+        # Define bids_experiment_dir
+        bids_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+
+        if bids_dir not in bids_experiments:
+            bids_experiments.append(bids_dir)
 
     # Close connection
     connection.close()
@@ -388,43 +462,44 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
 
-    # Define bids_experiment_dir
-    bids_experiment_dir = f"{bids_root}/{pi_prefix}/{study_prefix}/bids"
+    for bids_experiment_dir in bids_experiments:
 
-    # Build shell script for sbatch
-    sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
-        apptainer exec --no-home -B {bids_experiment_dir} {simg} \
-        bids-validator {bids_experiment_dir}\nEOF\n)\""
+        # Build shell script for sbatch
+        sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
+            apptainer exec --no-home -B {bids_experiment_dir} {simg} \
+            bids-validator {bids_experiment_dir}\nEOF\n)\""
 
-    # Compile list of slurm parameters.
-    bids_val_slurm_params = compile_slurm_list(arg_dict, user)
-    if not ('output' in arg_dict['slurm-args']):
-        val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
-        arg = f"--output {val_output}"
-        bids_val_slurm_params.append(arg)
-    else:
-        x2b_output = arg_dict['slurm-args']['output'].split("/")
-        x2b_output[-1] = "%x-%J.txt"
-        val_output = "/".join(x2b_output)
-        bids_val_slurm_params = [f"--output {val_output}" if "output" in item else item for item in bids_val_slurm_params]
+        # Compile list of slurm parameters.
+        bids_val_slurm_params = compile_slurm_list(arg_dict, user)
+        if not ('output' in arg_dict['slurm-args']):
+            val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+            arg = f"--output {val_output}"
+            bids_val_slurm_params.append(arg)
+        else:
+            x2b_output = arg_dict['slurm-args']['output'].split("/")
+            x2b_output[-1] = "%x-%J.txt"
+            val_output = "/".join(x2b_output)
+            bids_val_slurm_params = [f"--output {val_output}" if "output" in item else item for item in bids_val_slurm_params]
 
-    bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
-    slurm_options = ' '.join(bids_val_slurm_params)
+        bids_val_slurm_params.append("--kill-on-invalid-dep=yes")
+        slurm_options = ' '.join(bids_val_slurm_params)
 
-    # Process command string for SRUN
-    slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
+        # Process command string for SRUN
+        slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
 
-    # Fetch JOB-IDs of xnat2bids jobs to wait upon
-    afterok_ids = ":".join(job_deps)
+        # Fetch JOB-IDs of xnat2bids jobs to wait upon
+        afterok_ids = ":".join(job_deps)
 
-    sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
-        --wrap {sbatch_bids_val_script}") 
+        sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
+            --wrap {sbatch_bids_val_script}") 
 
-    # Run bids-validator
-    proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
+        # Run bids-validator
+        proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
 
-    stdout, stderr = await proc.communicate()
-    return stdout
+        stdout, stderr = await proc.communicate()
+        output.append(stdout)
+
+    return output
 
 async def main():
     # Instantiate argument parser
@@ -436,10 +511,6 @@ async def main():
 
     # Set arg_dict. If user provides config, merge dictionaries.
     arg_dict = merge_default_params(args.config, default_params)
-
-    # If sessions does not exist in arg_dict, prompt user for Accession ID(s).
-    if 'sessions' not in arg_dict['xnat2bids-args']:
-        prompt_user_for_sessions(arg_dict)
         
     # Fetch user credentials 
     user, password = get_user_credentials()
@@ -451,9 +522,13 @@ async def main():
     version = fetch_latest_version()
     simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-    # Compile parameter list per session for calls to xnat2bids
-    if "sessions" in arg_dict['xnat2bids-args']:
-        argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+    if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
+        sessions = fetch_requested_sessions(arg_dict, user, password)
+        arg_dict['xnat2bids-args']['sessions'] = sessions
+    else:
+        prompt_user_for_sessions(arg_dict)
+
+    argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
 
     # Launch xnat2bids
     x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
@@ -469,8 +544,8 @@ async def main():
     logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
 
     if needs_validation:
-        logging.info("Launched bids-validator to check BIDS compliance")
-        logging.info("Job ID: %s", ''.join(validator_jobs))
+        logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
+        logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
 
     logging.info("Processed Scans Located At: %s", bids_root)
 

@@ -34,18 +34,22 @@ class ParamType(Enum):
 
 # param_name: (param_type, needs_binding)
 xnat2bids_params = {
-    "bids_root": (ParamType.PARAM_VAL, True),
     "bidsmap-file": (ParamType.PARAM_VAL, True),
-    "host": (ParamType.PARAM_VAL, False),
-    "log-id": (ParamType.PARAM_VAL, False),
-    "version": (ParamType.PARAM_VAL, False),
-    "includeseq": (ParamType.MULTI_VAL, False),
-    "skipseq": (ParamType.MULTI_VAL, False),
+    "bids_root": (ParamType.PARAM_VAL, True),
+    "cleanup": (ParamType.FLAG_ONLY, False),
     "export-only": (ParamType.FLAG_ONLY, False),
+    "host": (ParamType.PARAM_VAL, False),
+    "includeseq": (ParamType.MULTI_VAL, False),
+    "log-id": (ParamType.PARAM_VAL, False),
     "overwrite": (ParamType.FLAG_ONLY, False),
+    "project": (ParamType.PARAM_VAL, False),
+    "sessions": (ParamType.MULTI_VAL, False),
     "skip-export": (ParamType.FLAG_ONLY, False),
+    "skipseq": (ParamType.MULTI_VAL, False),
+    "subjects": (ParamType.MULTI_VAL, False),
+    "version": (ParamType.PARAM_VAL, False),
     "verbose": (ParamType.MULTI_FLAG, False),
-} 
+}
 
 def get_user_credentials():
     user = input('Enter XNAT Username: ')
@@ -182,6 +186,8 @@ def fetch_job_ids(stdout):
     return jobs
 
 def fetch_requested_sessions(arg_dict, user, password):
+    # Initialize sessions list
+    sessions = []
 
     # Establish connection 
     connection = requests.Session()
@@ -249,7 +255,9 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
 
     for param, value in xnat2bids_dict.items():
         if param not in xnat2bids_params:
-            continue
+            logging.info(f"Invalid parameter {param} in configuration file.")
+            logging.info("Please resolve invalid parameters before running.")
+            exit()
         if value == "" or value is  None:
             continue
         if param in positional_args:

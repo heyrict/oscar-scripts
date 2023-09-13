@@ -64,6 +64,8 @@ def merge_default_params(config_path, default_params):
 
 def parse_cli_arguments():
     parser = argparse.ArgumentParser()
+    parser.add_argument('bids_root')
+    parser.add_argument('--diff', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
     parser.add_argument("--config", help="path to user config")
     return parser.parse_args()   
 
@@ -121,9 +123,8 @@ def get_sessions_from_project(connection, host, project):
         host + f"/data/projects/{project}/experiments",
         params={"format": "json"},
     )
-    projectValues = r.json()["ResultSet"]["Result"]
-
-    return extractSessions(projectValues)
+    
+    return r.json()["ResultSet"]["Result"]
 
 def prepare_path_prefixes(project, subject):
     # get PI from project name
@@ -185,6 +186,62 @@ def fetch_job_ids(stdout):
 
     return jobs
 
+def diff_data_directory(bids_root):
+
+    missing_sessions = []
+    # Fetch user credentials 
+    user, password = get_user_credentials()
+
+    # Establish connection 
+    connection = requests.Session()
+    connection.verify = True
+    connection.auth = (user, password)
+
+    host = "https://xnat.bnc.brown.edu"
+
+    projects = [proj.name for proj in os.scandir(bids_root) if proj.is_dir()]
+
+    for project in projects:
+
+        studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{project}")]
+
+        for study in studies:
+
+            proj_study = f"{project}_{study}".upper()
+            sessions = get_sessions_from_project(connection, host, proj_study)
+
+            for experiment in sessions:
+                if "_" in experiment['label']:
+                    subj, sess = experiment['label'].split("_")
+
+                else:
+                    subj = experiment['label']
+                    sess = "01"
+
+                ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
+
+                if not (os.path.exists(ses_path)):
+                    missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
+
+    connection.close()
+
+    return missing_sessions
+
+def generate_diff_report(sessions_to_update):
+
+    for session_data in sessions_to_update:
+        project = session_data['project']
+        study = session_data['study']
+        subject = session_data['subject']
+        session = session_data['session']
+        ID = session_data['ID']
+
+        if session == '':
+            logging.info(f"Missing session information for {project}/{study}/{subject} (ID: {ID})")
+        else:
+            logging.info(f"Session {session} found for {project}/{study}/{subject} (ID: {ID})")
+
+
 def fetch_requested_sessions(arg_dict, user, password):
     # Initialize sessions list
     sessions = []
@@ -204,7 +261,7 @@ def fetch_requested_sessions(arg_dict, user, password):
             sessions = get_sessions_from_project_subjects(connection, host, project, subjects)
 
         else:
-            sessions = get_sessions_from_project(connection, host, project)
+            sessions = extractSessions(get_sessions_from_project(connection, host, project))
 
     connection.close()
 
@@ -505,49 +562,55 @@ async def main():
     # Instantiate argument parser
     args = parse_cli_arguments()
 
-    # Load default config file into dictionary
-    script_dir = pathlib.Path(__file__).parent.resolve()
-    default_params = load(f'{script_dir}/x2b_default_config.toml')
-
-    # Set arg_dict. If user provides config, merge dictionaries.
-    arg_dict = merge_default_params(args.config, default_params)
-        
-    # Fetch user credentials 
-    user, password = get_user_credentials()
-
-    # Initialize bids_root for non-local use
-    bids_root = f"/users/{user}/bids-export/"
-
-    # Initialize version and singularity image for non-local use
-    version = fetch_latest_version()
-    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
-
-    if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
-        sessions = fetch_requested_sessions(arg_dict, user, password)
-        arg_dict['xnat2bids-args']['sessions'] = sessions
+    if (args.diff):
+        if (args.bids_root) and (os.path.exists(args.bids_root)):
+            sessions_to_update = diff_data_directory(args.bids_root)
+            generate_diff_report(sessions_to_update)
     else:
-        prompt_user_for_sessions(arg_dict)
 
-    argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+        # Load default config file into dictionary
+        script_dir = pathlib.Path(__file__).parent.resolve()
+        default_params = load(f'{script_dir}/x2b_default_config.toml')
 
-    # Launch xnat2bids
-    x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
-    x2b_jobs = fetch_job_ids(x2b_output)
+        # Set arg_dict. If user provides config, merge dictionaries.
+        arg_dict = merge_default_params(args.config, default_params)
+            
+        # Fetch user credentials 
+        user, password = get_user_credentials()
 
-    # Launch bids-validator
-    if needs_validation:
-        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
-        validator_jobs = fetch_job_ids(validator_output)
+        # Initialize bids_root for non-local use
+        bids_root = f"/users/{user}/bids-export/"
 
-    # Summary Logging 
-    logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
-    logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
+        # Initialize version and singularity image for non-local use
+        version = fetch_latest_version()
+        simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
-    if needs_validation:
-        logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
-        logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
+        if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
+            sessions = fetch_requested_sessions(arg_dict, user, password)
+            arg_dict['xnat2bids-args']['sessions'] = sessions
+        else:
+            prompt_user_for_sessions(arg_dict)
 
-    logging.info("Processed Scans Located At: %s", bids_root)
+        argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+
+        # Launch xnat2bids
+        x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
+        x2b_jobs = fetch_job_ids(x2b_output)
+
+        # Launch bids-validator
+        if needs_validation:
+            validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
+            validator_jobs = fetch_job_ids(validator_output)
+
+        # Summary Logging 
+        logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
+        logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
+
+        if needs_validation:
+            logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
+            logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
+
+        logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":
     asyncio.run(main())

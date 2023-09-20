@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import copy
 from collections import defaultdict
+import datetime
 from enum import Enum
 from getpass import getpass
 import glob
@@ -13,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time 
 from toml import load
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
@@ -104,7 +106,6 @@ def get_project_subject_session(connection, host, session):
 
 def get_sessions_from_project_subjects(connection, host, project, subjects):
     sessions = []
-
     for subj in subjects:
         r = get(
             connection,
@@ -209,8 +210,11 @@ def diff_data_directory(bids_root):
 
             proj_study = f"{project}_{study}".upper()
             sessions = get_sessions_from_project(connection, host, proj_study)
-
+            
             for experiment in sessions:
+                insert_date, insert_time = experiment['insert_date'].split()
+                year, month, day = insert_date.split("-")
+                exp_date = datetime.datetime(int(year), int(month), int(day))
                 if "_" in experiment['label']:
                     subj, sess = experiment['label'].split("_")
 
@@ -222,6 +226,13 @@ def diff_data_directory(bids_root):
 
                 if not (os.path.exists(ses_path)):
                     missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
+                else:
+                    c_time = os.path.getctime(ses_path)
+                    l_time = time.localtime(c_time)
+                    data_date = datetime.datetime(l_time.tm_year, l_time.tm_mon, l_time.tm_mday)
+        
+                    if (exp_date > data_date):
+                        missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
 
     connection.close()
 

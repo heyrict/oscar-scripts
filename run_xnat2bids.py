@@ -68,6 +68,7 @@ def parse_cli_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('bids_root')
     parser.add_argument('--diff', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
+    parser.add_argument('--update', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
     parser.add_argument("--config", help="path to user config")
     return parser.parse_args()   
 
@@ -187,11 +188,9 @@ def fetch_job_ids(stdout):
 
     return jobs
 
-def diff_data_directory(bids_root):
+def diff_data_directory(bids_root, user, password):
 
     missing_sessions = []
-    # Fetch user credentials 
-    user, password = get_user_credentials()
 
     # Establish connection 
     connection = requests.Session()
@@ -322,6 +321,7 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
         x2b_param_list.append(arg)
 
     for param, value in xnat2bids_dict.items():
+        print(param, value)
         if param not in xnat2bids_params:
             logging.info(f"Invalid parameter {param} in configuration file.")
             logging.info("Please resolve invalid parameters before running.")
@@ -577,6 +577,7 @@ async def main():
         if (args.bids_root) and (os.path.exists(args.bids_root)):
             sessions_to_update = diff_data_directory(args.bids_root)
             generate_diff_report(sessions_to_update)
+            
     else:
 
         # Load default config file into dictionary
@@ -596,9 +597,18 @@ async def main():
         version = fetch_latest_version()
         simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
+
         if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
             sessions = fetch_requested_sessions(arg_dict, user, password)
             arg_dict['xnat2bids-args']['sessions'] = sessions
+        elif args.update:
+            sessions_to_update = diff_data_directory(args.bids_root, user, password)
+            session_list = [ses['ID'] for ses in sessions_to_update]
+            if session_list is None:
+                logging.info("Your data directory is synced. Exiting.")
+                exit()
+                
+            arg_dict['xnat2bids-args']['sessions'] = session_list
         else:
             prompt_user_for_sessions(arg_dict)
 

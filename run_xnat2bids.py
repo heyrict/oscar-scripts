@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import copy
 from collections import defaultdict
+import datetime
 from enum import Enum
 from getpass import getpass
 import glob
@@ -13,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from toml import load
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
@@ -182,11 +184,9 @@ def fetch_job_ids(stdout):
 
     return jobs
 
-def diff_data_directory(bids_root):
+def diff_data_directory(bids_root, user, password):
 
     missing_sessions = []
-    # Fetch user credentials 
-    user, password = get_user_credentials()
 
     # Establish connection 
     connection = requests.Session()
@@ -195,29 +195,45 @@ def diff_data_directory(bids_root):
 
     host = "https://xnat.bnc.brown.edu"
 
+    # Gather list of existing projects in data directory
     projects = [proj.name for proj in os.scandir(bids_root) if proj.is_dir()]
 
     for project in projects:
-
+        # Gather list of studies for every project
         studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{project}")]
 
         for study in studies:
-
+            # Request all sessions in PROJECT_STUDY from XNAT.
             proj_study = f"{project}_{study}".upper()
             sessions = get_sessions_from_project(connection, host, proj_study)
-
+            
             for experiment in sessions:
-                if "_" in experiment['label']:
-                    subj, sess = experiment['label'].split("_")
+                # Get date of most recent change for every session
+                latest_date = experiment['date']
+                year, month, day = latest_date.split("-")
+                exp_date = datetime.datetime(int(year), int(month), int(day))
 
+                # Sessions with label format SUBJECT_SESSION are one among many, named ses-SESSION
+                if "_" in experiment['label']:
+                    subj, sess = experiment['label'].lower().split("_")
+                # Sessions with SUBJECT as label are the only session. Default to ses-01
                 else:
                     subj = experiment['label']
                     sess = "01"
 
                 ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
 
+                # Add to list of sessions to sync if path does not exist. 
                 if not (os.path.exists(ses_path)):
                     missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
+                else:
+                    # For existing paths, check for more recent changes via date of last export and XNAT's session date.
+                    c_time = os.path.getctime(ses_path)
+                    l_time = time.localtime(c_time)
+                    data_date = datetime.datetime(l_time.tm_year, l_time.tm_mon, l_time.tm_mday)
+
+                    if (exp_date > data_date):
+                        missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
 
     connection.close()
 
@@ -554,9 +570,12 @@ async def main():
     # Instantiate argument parser
     args = parse_cli_arguments()
 
+    # Fetch user credentials 
+    user, password = get_user_credentials()
+
     if (args.diff):
         if (args.bids_root) and (os.path.exists(args.bids_root)):
-            sessions_to_update = diff_data_directory(args.bids_root)
+            sessions_to_update = diff_data_directory(args.bids_root, user, password)
             generate_diff_report(sessions_to_update)
     else:
 
@@ -566,9 +585,6 @@ async def main():
 
         # Set arg_dict. If user provides config, merge dictionaries.
         arg_dict = merge_default_params(args.config, default_params)
-            
-        # Fetch user credentials 
-        user, password = get_user_credentials()
 
         # Initialize bids_root for non-local use
         bids_root = f"/users/{user}/bids-export/"

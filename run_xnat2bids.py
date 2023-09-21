@@ -215,7 +215,7 @@ def diff_data_directory(bids_root, user, password):
                 year, month, day = insert_date.split("-")
                 exp_date = datetime.datetime(int(year), int(month), int(day))
                 if "_" in experiment['label']:
-                    subj, sess = experiment['label'].split("_")
+                    subj, sess = experiment['label'].lower().split("_")
 
                 else:
                     subj = experiment['label']
@@ -321,7 +321,6 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
         x2b_param_list.append(arg)
 
     for param, value in xnat2bids_dict.items():
-        print(param, value)
         if param not in xnat2bids_params:
             logging.info(f"Invalid parameter {param} in configuration file.")
             logging.info("Please resolve invalid parameters before running.")
@@ -604,7 +603,7 @@ async def main():
         elif args.update:
             sessions_to_update = diff_data_directory(args.bids_root, user, password)
             session_list = [ses['ID'] for ses in sessions_to_update]
-            if session_list is None:
+            if len(session_list) == 0:
                 logging.info("Your data directory is synced. Exiting.")
                 exit()
                 

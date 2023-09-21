@@ -576,6 +576,8 @@ async def main():
         if (args.bids_root) and (os.path.exists(args.bids_root)):
             sessions_to_update = diff_data_directory(args.bids_root)
             generate_diff_report(sessions_to_update)
+        else:
+            log.info("Please provide an existing path to your BIDS data directory.")
             
     else:
 
@@ -600,6 +602,7 @@ async def main():
         if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
             sessions = fetch_requested_sessions(arg_dict, user, password)
             arg_dict['xnat2bids-args']['sessions'] = sessions
+
         elif args.update:
             sessions_to_update = diff_data_directory(args.bids_root, user, password)
             session_list = [ses['ID'] for ses in sessions_to_update]
@@ -608,6 +611,7 @@ async def main():
                 exit()
                 
             arg_dict['xnat2bids-args']['sessions'] = session_list
+
         else:
             prompt_user_for_sessions(arg_dict)
 

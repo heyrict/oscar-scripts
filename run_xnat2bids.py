@@ -184,6 +184,10 @@ def fetch_job_ids(stdout):
 
     return jobs
 
+def get_datetime(date):
+    year, month, day = date.split(" ")[0].split("-")
+    return datetime.datetime(int(year), int(month), int(day))
+
 def diff_data_directory(bids_root, user, password):
 
     missing_sessions = []
@@ -195,45 +199,45 @@ def diff_data_directory(bids_root, user, password):
 
     host = "https://xnat.bnc.brown.edu"
 
-    # Gather list of existing projects in data directory
-    projects = [proj.name for proj in os.scandir(bids_root) if proj.is_dir()]
+    # Gather list of existing PIs in data directory
+    pis = [proj.name for proj in os.scandir(bids_root) if proj.is_dir()]
 
-    for project in projects:
+    for pi in pis:
         # Gather list of studies for every project
-        studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{project}")]
+        studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{pi}")]
 
         for study in studies:
             # Request all sessions in PROJECT_STUDY from XNAT.
-            proj_study = f"{project}_{study}".upper()
-            sessions = get_sessions_from_project(connection, host, proj_study)
+            pi_study = f"{pi}_{study}".upper()
+            sessions = get_sessions_from_project(connection, host, pi_study)
             
-            for experiment in sessions:
+            for session in sessions:
                 # Get date of most recent change for every session
-                latest_date = experiment['date']
-                year, month, day = latest_date.split("-")
-                exp_date = datetime.datetime(int(year), int(month), int(day))
+                latest_date = get_datetime(session['date'])
+                date_added = get_datetime(session['insert_date'])
+                
 
                 # Sessions with label format SUBJECT_SESSION are one among many, named ses-SESSION
-                if "_" in experiment['label']:
-                    subj, sess = experiment['label'].lower().split("_")
+                if "_" in session['label']:
+                    subj, sess = session['label'].lower().split("_")
                 # Sessions with SUBJECT as label are the only session. Default to ses-01
                 else:
-                    subj = experiment['label']
+                    subj = session['label']
                     sess = "01"
 
-                ses_path = f"{bids_root}/{project}/study-{study}/bids/sub-{subj}/ses-{sess}"
+                ses_path = f"{bids_root}/{pi}/study-{study}/bids/sub-{subj}/ses-{sess}"
 
                 # Add to list of sessions to sync if path does not exist. 
                 if not (os.path.exists(ses_path)):
-                    missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
+                    missing_sessions.append({'pi': pi, 'study': study, 'subject': subj, 'session': sess, 'ID': session['ID']} )
                 else:
                     # For existing paths, check for more recent changes via date of last export and XNAT's session date.
                     c_time = os.path.getctime(ses_path)
                     l_time = time.localtime(c_time)
                     data_date = datetime.datetime(l_time.tm_year, l_time.tm_mon, l_time.tm_mday)
 
-                    if (exp_date > data_date):
-                        missing_sessions.append({'project': project, 'study': study, 'subject': subj, 'session': sess, 'ID': experiment['ID']} )
+                    if (date_added > data_date or latest_date > data_date):
+                        missing_sessions.append({'pi': pi, 'study': study, 'subject': subj, 'session': sess, 'ID': session['ID']} )
 
     connection.close()
 
@@ -242,7 +246,7 @@ def diff_data_directory(bids_root, user, password):
 def generate_diff_report(sessions_to_update):
 
     for session_data in sessions_to_update:
-        project = session_data['project']
+        project = session_data['pi']
         study = session_data['study']
         subject = session_data['subject']
         session = session_data['session']
@@ -577,6 +581,9 @@ async def main():
         if (args.bids_root) and (os.path.exists(args.bids_root)):
             sessions_to_update = diff_data_directory(args.bids_root, user, password)
             generate_diff_report(sessions_to_update)
+        else:
+            if not os.path.exists(args.bids_root):
+                logging.error("The provided BIDS_ROOT path %s does not exist.", args.bids_root)
     else:
 
         # Load default config file into dictionary

@@ -66,11 +66,18 @@ def merge_default_params(config_path, default_params):
 
 def parse_cli_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('bids_root')
+    parser.add_argument('bids_root', nargs='?', default=None)
     parser.add_argument('--diff', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
     parser.add_argument('--update', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
     parser.add_argument("--config", help="path to user config")
-    return parser.parse_args()   
+
+    args = parser.parse_args()
+    if args.diff or args.update:
+        if args.bids_root is None:
+            parser.error("bids_root is required when --diff or --update is specified")
+
+
+    return args  
 
 def prompt_user_for_sessions(arg_dict):
     docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"

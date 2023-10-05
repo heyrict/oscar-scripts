@@ -628,6 +628,22 @@ async def main():
             if len(session_list) == 0:
                 logging.info("Your data directory is synced. Exiting.")
                 exit()
+            else:
+                logging.info("Launching jobs for the following sessions:")
+                generate_diff_report(sessions_to_update)
+
+                while True:
+                    confirm = input("Would you like to proceed with the update? (y/n) \n")
+                    if confirm == "y" or confirm == "Y":
+                        break
+                    elif confirm == "n" or confirm == "N":
+                        exit()
+                    else:
+                        logging.info("Your input was not a valid option.")
+                        continue
+
+
+
                 
             arg_dict['xnat2bids-args']['sessions'] = session_list
 

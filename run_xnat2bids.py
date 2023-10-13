@@ -66,10 +66,18 @@ def merge_default_params(config_path, default_params):
 
 def parse_cli_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('bids_root')
+    parser.add_argument('bids_root', nargs='?', default=None)
     parser.add_argument('--diff', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
+    parser.add_argument('--update', action=argparse.BooleanOptionalAction, help="diff report between bids_root and remote XNAT")
     parser.add_argument("--config", help="path to user config")
-    return parser.parse_args()   
+
+    args = parser.parse_args()
+    if args.diff or args.update:
+        if args.bids_root is None:
+            parser.error("bids_root is required when --diff or --update is specified")
+
+
+    return args  
 
 def prompt_user_for_sessions(arg_dict):
     docs = "https://docs.ccv.brown.edu/bnc-user-manual/xnat-to-bids-intro/using-oscar/oscar-utility-script"
@@ -106,7 +114,6 @@ def get_project_subject_session(connection, host, session):
 
 def get_sessions_from_project_subjects(connection, host, project, subjects):
     sessions = []
-
     for subj in subjects:
         r = get(
             connection,
@@ -211,6 +218,7 @@ def diff_data_directory(bids_root, user, password):
         studies = [stu.name.split("-")[1] for stu in os.scandir(f"{bids_root}/{pi}")]
 
         for study in studies:
+          
             # Request all sessions in PROJECT_STUDY from XNAT.
             pi_study = f"{pi}_{study}".upper()
             sessions = get_sessions_from_project(connection, host, pi_study)
@@ -592,6 +600,7 @@ async def main():
         else:
             if not os.path.exists(args.bids_root):
                 logging.error("The provided BIDS_ROOT path %s does not exist.", args.bids_root)
+
     else:
 
         # Load default config file into dictionary
@@ -608,9 +617,36 @@ async def main():
         version = fetch_latest_version()
         simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
+
         if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
             sessions = fetch_requested_sessions(arg_dict, user, password)
             arg_dict['xnat2bids-args']['sessions'] = sessions
+
+        elif args.update:
+            sessions_to_update = diff_data_directory(args.bids_root, user, password)
+            session_list = [ses['ID'] for ses in sessions_to_update]
+            if len(session_list) == 0:
+                logging.info("Your data directory is synced. Exiting.")
+                exit()
+            else:
+                logging.info("Launching jobs for the following sessions:")
+                generate_diff_report(sessions_to_update)
+
+                while True:
+                    confirm = input("Would you like to proceed with the update? (y/n) \n")
+                    if confirm == "y" or confirm == "Y":
+                        break
+                    elif confirm == "n" or confirm == "N":
+                        exit()
+                    else:
+                        logging.info("Your input was not a valid option.")
+                        continue
+
+
+
+                
+            arg_dict['xnat2bids-args']['sessions'] = session_list
+
         else:
             prompt_user_for_sessions(arg_dict)
 

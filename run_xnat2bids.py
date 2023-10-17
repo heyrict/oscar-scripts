@@ -672,7 +672,12 @@ async def main():
             else:
                 arg_dict['xnat2bids-args']['sessions'] = session_list    
 
-        else:
+        try:
+            sessions = arg_dict['xnat2bids-args']['sessions']
+        except KeyError:
+            sessions = []
+
+        if not sessions:
             prompt_user_for_sessions(arg_dict)
 
         argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)

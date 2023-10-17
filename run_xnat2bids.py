@@ -61,7 +61,7 @@ def verify_parameters(config):
     x2b_params = config_dict['xnat2bids-args']
     for k, v in x2b_params.items():
         if not (k in xnat2bids_params or k in config_params):
-            logging.info(f"Invalid parameter {k} in configuration file.")
+            logging.info(f"Invalid parameter in configuration file: {k} ")
             logging.info("Please resolve invalid parameters before running.")
             exit()
 
@@ -353,7 +353,7 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
     for param, value in xnat2bids_dict.items():
         print(param, param in xnat2bids_params or param in config_params)
         if not (param in xnat2bids_params or param in config_params):
-            logging.info(f"Invalid parameter {param} in configuration file.")
+            logging.info(f"Invalid parameter in configuration file: {param}")
             logging.info("Please resolve invalid parameters before running.")
             exit()
         if value == "" or value is  None:

@@ -84,11 +84,6 @@ def parse_cli_arguments():
     parser.add_argument("--config", help="path to user config")
 
     args = parser.parse_args()
-    if args.diff or args.update:
-        if args.bids_root is None:
-            parser.error("bids_root is required when --diff or --update is specified")
-
-
     return args  
 
 def prompt_user_for_sessions(arg_dict):
@@ -645,7 +640,13 @@ async def main():
                     arg_dict['xnat2bids-args']['sessions'] = sessions
 
         if args.update:
-            sessions_to_update = diff_data_directory(args.bids_root, user, password)
+            data_dir = bids_root
+            if args.bids_root:
+                data_dir = args.bids_root
+            elif "bids_root" in arg_dict['xnat2bids-args']:
+                data_dir = arg_dict['xnat2bids-args']["bids_root"]
+
+            sessions_to_update = diff_data_directory(data_dir, user, password)
             session_list = [ses['ID'] for ses in sessions_to_update]
             if len(session_list) == 0:
                 logging.info("Your data directory is synced. Exiting.")

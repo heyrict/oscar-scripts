@@ -5,12 +5,14 @@ mail-user = "example-user@brown.edu"
 mail-type = "ALL"
 
 [xnat2bids-args]
+project="BNC_DEMODAT"
+subjects=["001", "002"]
 sessions = [
     "XNAT_E00080", 
     "XNAT_E00114",  
     "XNAT_E00152"
     ]
-skipseq=[6]
+skipseq=["anat-t1w_acq-memprage"]
 overwrite=true
 verbose=0
 

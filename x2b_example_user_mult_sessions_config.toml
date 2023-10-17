@@ -5,7 +5,7 @@ mail-user = "example-user@brown.edu"
 mail-type = "ALL"
 
 [xnat2bids-args]
-projects=["BNC_DEMODAT"]
+project=["BNC_DEMODAT"]
 subjects=["001", "002"]
 sessions = [
     "XNAT_E00080", 

@@ -351,7 +351,6 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
         x2b_param_list.append(arg)
 
     for param, value in xnat2bids_dict.items():
-        print(param, param in xnat2bids_params or param in config_params)
         if not (param in xnat2bids_params or param in config_params):
             logging.info(f"Invalid parameter in configuration file: {param}")
             logging.info("Please resolve invalid parameters before running.")
@@ -393,7 +392,6 @@ def compile_slurm_list(arg_dict, user):
 
 def compile_xnat2bids_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
-    print("COMPILING LIST")
     # Create copy of dictionary, so as not to update
     # the original object reference while merging configs.
     arg_dict_copy = copy.deepcopy(arg_dict) 
@@ -418,7 +416,6 @@ def compile_xnat2bids_list(session, arg_dict, user):
 def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=[]):
     # Compose argument lists for each session 
     for session in arg_dict['xnat2bids-args']['sessions']:
-
         # Compile list of slurm parameters.
         slurm_param_list = compile_slurm_list(arg_dict, user)
 
@@ -640,9 +637,14 @@ async def main():
                 logging.info("There are no sessions to export. Please check your configuration file for errors.")
                 exit()
             else:
-                arg_dict['xnat2bids-args']['sessions'] = sessions
+                if 'sessions' in arg_dict['xnat2bids-args']:
+                    for session in sessions:
+                        if session not in arg_dict['xnat2bids-args']['sessions']:
+                            arg_dict['xnat2bids-args']['sessions'].append(session)
+                else:
+                    arg_dict['xnat2bids-args']['sessions'] = sessions
 
-        elif args.update:
+        if args.update:
             sessions_to_update = diff_data_directory(args.bids_root, user, password)
             session_list = [ses['ID'] for ses in sessions_to_update]
             if len(session_list) == 0:
@@ -663,9 +665,12 @@ async def main():
                         continue
 
 
-
-                
-            arg_dict['xnat2bids-args']['sessions'] = session_list
+            if 'sessions' in arg_dict['xnat2bids-args']:
+                for session in session_list:
+                    if session not in arg_dict['xnat2bids-args']['sessions']:
+                        arg_dict['xnat2bids-args']['sessions'].append(session)
+            else:
+                arg_dict['xnat2bids-args']['sessions'] = session_list    
 
         else:
             prompt_user_for_sessions(arg_dict)

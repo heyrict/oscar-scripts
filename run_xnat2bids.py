@@ -44,14 +44,26 @@ xnat2bids_params = {
     "includeseq": (ParamType.MULTI_VAL, False),
     "log-id": (ParamType.PARAM_VAL, False),
     "overwrite": (ParamType.FLAG_ONLY, False),
-    "project": (ParamType.PARAM_VAL, False),
     "sessions": (ParamType.MULTI_VAL, False),
     "skip-export": (ParamType.FLAG_ONLY, False),
     "skipseq": (ParamType.MULTI_VAL, False),
-    "subjects": (ParamType.MULTI_VAL, False),
     "version": (ParamType.PARAM_VAL, False),
     "verbose": (ParamType.MULTI_FLAG, False),
 }
+
+config_params = {
+    "project": (ParamType.PARAM_VAL, False),
+    "subjects": (ParamType.MULTI_VAL, False),
+}
+
+def verify_parameters(config):
+    config_dict = load(config)
+    x2b_params = config_dict['xnat2bids-args']
+    for k, v in x2b_params.items():
+        if not (k in xnat2bids_params or k in config_params):
+            logging.info(f"Invalid parameter in configuration file: {k} ")
+            logging.info("Please resolve invalid parameters before running.")
+            exit()
 
 def get_user_credentials():
     user = input('Enter XNAT Username: ')
@@ -280,7 +292,7 @@ def fetch_requested_sessions(arg_dict, user, password):
     connection.auth = (user, password)
 
     host = arg_dict["xnat2bids-args"]["host"]
-
+        
     if 'project' in arg_dict['xnat2bids-args']:
         project = arg_dict['xnat2bids-args']['project']
     
@@ -339,13 +351,14 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
         x2b_param_list.append(arg)
 
     for param, value in xnat2bids_dict.items():
-        if param not in xnat2bids_params:
-            logging.info(f"Invalid parameter {param} in configuration file.")
+        print(param, param in xnat2bids_params or param in config_params)
+        if not (param in xnat2bids_params or param in config_params):
+            logging.info(f"Invalid parameter in configuration file: {param}")
             logging.info("Please resolve invalid parameters before running.")
             exit()
         if value == "" or value is  None:
             continue
-        if param in positional_args:
+        if param in positional_args or param in config_params:
             continue
 
         param_type = xnat2bids_params[param][0]
@@ -380,7 +393,7 @@ def compile_slurm_list(arg_dict, user):
 
 def compile_xnat2bids_list(session, arg_dict, user):
     """Create command line argument list from TOML dictionary."""
-
+    print("COMPILING LIST")
     # Create copy of dictionary, so as not to update
     # the original object reference while merging configs.
     arg_dict_copy = copy.deepcopy(arg_dict) 
@@ -593,6 +606,9 @@ async def main():
     # Fetch user credentials 
     user, password = get_user_credentials()
 
+    if (args.config):
+        verify_parameters(args.config)
+
     if (args.diff):
         if (args.bids_root) and (os.path.exists(args.bids_root)):
             sessions_to_update = diff_data_directory(args.bids_root, user, password)
@@ -618,9 +634,13 @@ async def main():
         simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
 
 
-        if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subject', 'sessions']):
+        if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subjects', 'sessions']):
             sessions = fetch_requested_sessions(arg_dict, user, password)
-            arg_dict['xnat2bids-args']['sessions'] = sessions
+            if len(sessions) == 0:
+                logging.info("There are no sessions to export. Please check your configuration file for errors.")
+                exit()
+            else:
+                arg_dict['xnat2bids-args']['sessions'] = sessions
 
         elif args.update:
             sessions_to_update = diff_data_directory(args.bids_root, user, password)

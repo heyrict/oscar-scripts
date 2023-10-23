@@ -601,106 +601,109 @@ async def main():
     if (args.config):
         verify_parameters(args.config)
 
-    if (args.diff):
-        if (args.bids_root) and (os.path.exists(args.bids_root)):
-            sessions_to_update = diff_data_directory(args.bids_root, user, password)
-            generate_diff_report(sessions_to_update)
+  
+
+    # Load default config file into dictionary
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    default_params = load(f'{script_dir}/x2b_default_config.toml')
+
+    # Set arg_dict. If user provides config, merge dictionaries.
+    arg_dict = merge_default_params(args.config, default_params)
+
+    # Initialize bids_root for non-local use
+    bids_root = f"/users/{user}/bids-export/"
+
+    # Initialize version and singularity image for non-local use
+    version = fetch_latest_version()
+    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+
+
+    if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subjects', 'sessions']):
+        sessions = fetch_requested_sessions(arg_dict, user, password)
+        if len(sessions) == 0:
+            logging.info("There are no sessions to export. Please check your configuration file for errors.")
+            exit()
         else:
-            if not os.path.exists(args.bids_root):
-                logging.error("The provided BIDS_ROOT path %s does not exist.", args.bids_root)
-
-    else:
-
-        # Load default config file into dictionary
-        script_dir = pathlib.Path(__file__).parent.resolve()
-        default_params = load(f'{script_dir}/x2b_default_config.toml')
-
-        # Set arg_dict. If user provides config, merge dictionaries.
-        arg_dict = merge_default_params(args.config, default_params)
-
-        # Initialize bids_root for non-local use
-        bids_root = f"/users/{user}/bids-export/"
-
-        # Initialize version and singularity image for non-local use
-        version = fetch_latest_version()
-        simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
-
-
-        if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subjects', 'sessions']):
-            sessions = fetch_requested_sessions(arg_dict, user, password)
-            if len(sessions) == 0:
-                logging.info("There are no sessions to export. Please check your configuration file for errors.")
-                exit()
-            else:
-                if 'sessions' in arg_dict['xnat2bids-args']:
-                    for session in sessions:
-                        if session not in arg_dict['xnat2bids-args']['sessions']:
-                            arg_dict['xnat2bids-args']['sessions'].append(session)
-                else:
-                    arg_dict['xnat2bids-args']['sessions'] = sessions
-
-        if args.update:
-            data_dir = bids_root
-            if args.bids_root:
-                data_dir = args.bids_root
-            elif "bids_root" in arg_dict['xnat2bids-args']:
-                data_dir = arg_dict['xnat2bids-args']["bids_root"]
-
-            sessions_to_update = diff_data_directory(data_dir, user, password)
-            session_list = [ses['ID'] for ses in sessions_to_update]
-            if len(session_list) == 0:
-                logging.info("Your data directory is synced. Exiting.")
-                exit()
-            else:
-                logging.info("Launching jobs for the following sessions:")
-                generate_diff_report(sessions_to_update)
-
-                while True:
-                    confirm = input("Would you like to proceed with the update? (y/n) \n")
-                    if confirm == "y" or confirm == "Y":
-                        break
-                    elif confirm == "n" or confirm == "N":
-                        exit()
-                    else:
-                        logging.info("Your input was not a valid option.")
-                        continue
-
-
             if 'sessions' in arg_dict['xnat2bids-args']:
-                for session in session_list:
+                for session in sessions:
                     if session not in arg_dict['xnat2bids-args']['sessions']:
                         arg_dict['xnat2bids-args']['sessions'].append(session)
             else:
-                arg_dict['xnat2bids-args']['sessions'] = session_list    
+                arg_dict['xnat2bids-args']['sessions'] = sessions
 
-        try:
-            sessions = arg_dict['xnat2bids-args']['sessions']
-        except KeyError:
-            sessions = []
+    if (args.diff):
+        data_dir = bids_root
+        if args.bids_root:
+            data_dir = args.bids_root
+        elif "bids_root" in arg_dict['xnat2bids-args']:
+            data_dir = arg_dict['xnat2bids-args']["bids_root"]
 
-        if not sessions:
-            prompt_user_for_sessions(arg_dict)
+        sessions_to_update = diff_data_directory(data_dir, user, password)
+        generate_diff_report(sessions_to_update)
+        return
+    
+    if args.update:
+        data_dir = bids_root
+        if args.bids_root:
+            data_dir = args.bids_root
+        elif "bids_root" in arg_dict['xnat2bids-args']:
+            data_dir = arg_dict['xnat2bids-args']["bids_root"]
 
-        argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+        sessions_to_update = diff_data_directory(data_dir, user, password)
+        session_list = [ses['ID'] for ses in sessions_to_update]
+        if len(session_list) == 0:
+            logging.info("Your data directory is synced. Exiting.")
+            exit()
+        else:
+            logging.info("Launching jobs for the following sessions:")
+            generate_diff_report(sessions_to_update)
 
-        # Launch xnat2bids
-        x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
-        x2b_jobs = fetch_job_ids(x2b_output)
+            while True:
+                confirm = input("Would you like to proceed with the update? (y/n) \n")
+                if confirm == "y" or confirm == "Y":
+                    break
+                elif confirm == "n" or confirm == "N":
+                    exit()
+                else:
+                    logging.info("Your input was not a valid option.")
+                    continue
 
-        # Launch bids-validator
-        if needs_validation:
-            validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
-            validator_jobs = fetch_job_ids(validator_output)
 
-        # Summary Logging 
-        logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
-        logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
+        if 'sessions' in arg_dict['xnat2bids-args']:
+            for session in session_list:
+                if session not in arg_dict['xnat2bids-args']['sessions']:
+                    arg_dict['xnat2bids-args']['sessions'].append(session)
+        else:
+            arg_dict['xnat2bids-args']['sessions'] = session_list    
 
-        if needs_validation:
-            logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
-            logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
+    try:
+        sessions = arg_dict['xnat2bids-args']['sessions']
+    except KeyError:
+        sessions = []
 
-        logging.info("Processed Scans Located At: %s", bids_root)
+    if not sessions:
+        prompt_user_for_sessions(arg_dict)
+
+    argument_lists, bids_root = assemble_argument_lists(arg_dict, user, password, bids_root)
+
+    # Launch xnat2bids
+    x2b_output, needs_validation = await launch_x2b_jobs(argument_lists, simg)
+    x2b_jobs = fetch_job_ids(x2b_output)
+
+    # Launch bids-validator
+    if needs_validation:
+        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
+        validator_jobs = fetch_job_ids(validator_output)
+
+    # Summary Logging 
+    logging.info("Launched %d xnat2bids %s", len(x2b_jobs), "jobs" if len(x2b_jobs) > 1 else "job")
+    logging.info("Job %s: %s", "IDs" if len(x2b_jobs) > 1 else "ID", ' '.join(x2b_jobs))
+
+    if needs_validation:
+        logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
+        logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
+
+    logging.info("Processed Scans Located At: %s", bids_root)
 
 if __name__ == "__main__":
     asyncio.run(main())

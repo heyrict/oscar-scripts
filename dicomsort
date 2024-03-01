@@ -8,6 +8,8 @@
 #subdirectories
 #############
 
+set -euo pipefail
+
 #defaults
 sourcedir='./'
 destdir='renamed'
@@ -106,9 +108,7 @@ do
 	if [ "$usesubdir" -eq 1 ]; then
 	    subdir=$(dicom_hinfo -tag "$nametag" -no_name "$f")
 	    targdir="$destdir"/"$subdir"
-	    if [ ! -d "$targdir" ]; then
-	        mkdir "$targdir"
-	    fi
+		mkdir -p "${targdir}"
 	fi
 		
 	#If we want to use subdirectories for each series, check to see if
@@ -119,9 +119,7 @@ do
 	    seqdir=$(dicom_hinfo -tag "$pnametag" -no_name "$f")
 	    serpre=$(printf "%02.0f_" "$snum")
 	    targdir="$destdir"/"$subdir"/"$serpre$seqdir"
-	    if [ ! -d "$targdir" ]; then
-	        mkdir "$targdir"
-	    fi
+		mkdir -p "${targdir}"
 	fi
 	
 	targfile=$(printf "%s/dcmS%04.0fA%04.0fI%04.0f\n" "$targdir" "$snum" "$anum" "$inum")

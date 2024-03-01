@@ -40,8 +40,8 @@ while getopts ":rd:s:iqnh" options; do
     i ) usesubdir=1;;
     q ) useseqdir=1;;
     n ) recurse=0;;
-    h ) echo $usage;;
-    \? ) echo $usage
+    h ) echo "$usage";;
+    \? ) echo "$usage"
     	 echo "dicom sort is a script to sort rename dicom files in alphabetical"
     	 echo "order according to series and slice number.  "
     	 echo "Options:"
@@ -54,60 +54,60 @@ while getopts ":rd:s:iqnh" options; do
     	 echo "-?: print this help message."
     	 echo "-h: print brief usage message."
          exit 1;;
-    * ) echo $usage
+    * ) echo "$usage"
           exit 1;;
   esac
 done
 
 #check to see if the destdir exists and create it if not
-if [ -d $destdir ]; then
+if [ -d "$destdir" ]; then
 	echo Destination directory exists
 else
-	echo Creating $destdir
-	mkdir $destdir	
+	echo Creating "$destdir"
+	mkdir "$destdir"	
 fi
-targdir=$destdir
+targdir="$destdir"
 
 echo "Procecessing..."
 
 #build a list of all the non-hidden files in the target directory
-if [ $recurse -eq 1 ]; then
-	files=`find $sourcedir -type f ! -name ".*" ! -iname "DICOMDIR"`
+if [ "$recurse" -eq 1 ]; then
+	files=$(find "$sourcedir" -type f ! -name ".*" ! -iname "DICOMDIR")
 else
-	files=`find $sourcedir -type f -maxdepth 1 ! -name ".*" ! -iname "DICOMDIR"`
+	files=$(find "$sourcedir" -type f -maxdepth 1 ! -name ".*" ! -iname "DICOMDIR")
 fi	
 	
 for f in $files;
 do
-	echo $f
+	echo "$f"
 	
 	#We are only using dicom_hdr to recognize dicom files now.  This seems clunky
 	#and could probably be sped up in the future.  All valid dicom files should have 
 	#the text DICM at offset 0x80 and we could just look for that in the future but 
 	#this is okay for now
-	dicom_hdr $f > $tempfile 
+	dicom_hdr "$f" > "$tempfile" 
 	
 	# make sure it's a dicom file
-	if grep 'ERROR:' $tempfile; then 
+	if grep 'ERROR:' "$tempfile"; then 
 	  continue
 	fi
 	
 	# Now using dicom_hinfo to get specific tags instead of dicom_hdr and grep
-    snum=`dicom_hinfo -tag $snumtag -no_name $f`
-    anum=`dicom_hinfo -tag $anumtag -no_name $f`
-    if [ $anum = "null" ]; then    
-        $anum=0
+    snum=$(dicom_hinfo -tag "$snumtag" -no_name "$f")
+    anum=$(dicom_hinfo -tag "$anumtag" -no_name "$f")
+    if [ "$anum" = "null" ]; then    
+        anum=0
     fi 
-    inum=`dicom_hinfo -tag $inumtag -no_name $f`
+    inum=$(dicom_hinfo -tag "$inumtag" -no_name "$f")
 	
 	
 	#If we want to use the the subject ID as an enclosing directory, check to see if
 	#it exists and create it if not
-	if [ $usesubdir -eq 1 ]; then
-	    subdir=`dicom_hinfo -tag $nametag -no_name $f`
-	    targdir=$destdir/$subdir
-	    if [ ! -d $targdir ]; then
-	        mkdir $targdir
+	if [ "$usesubdir" -eq 1 ]; then
+	    subdir=$(dicom_hinfo -tag "$nametag" -no_name "$f")
+	    targdir="$destdir"/"$subdir"
+	    if [ ! -d "$targdir" ]; then
+	        mkdir "$targdir"
 	    fi
 	fi
 		
@@ -115,27 +115,27 @@ do
 	#it exists for the current series and create it if not.  The series name
 	#should be prepended with a series number in case there are multiple 
 	#series with the same sequence name.
-	if [ $useseqdir -eq 1 ]; then
-	    seqdir=`dicom_hinfo -tag $pnametag -no_name $f`
-	    serpre=`printf "%02.0f_" $snum`
-	    targdir=$destdir/$subdir/$serpre$seqdir
-	    if [ ! -d $targdir ]; then
-	        mkdir $targdir
+	if [ "$useseqdir" -eq 1 ]; then
+	    seqdir=$(dicom_hinfo -tag "$pnametag" -no_name "$f")
+	    serpre=$(printf "%02.0f_" "$snum")
+	    targdir="$destdir"/"$subdir"/"$serpre$seqdir"
+	    if [ ! -d "$targdir" ]; then
+	        mkdir "$targdir"
 	    fi
 	fi
 	
-	targfile=`printf "%s/dcmS%04.0fA%04.0fI%04.0f\n" $targdir $snum $anum $inum`
+	targfile=$(printf "%s/dcmS%04.0fA%04.0fI%04.0f\n" "$targdir" "$snum" "$anum" "$inum")
 	
-	echo "Series $snum,  Acquisition $anum,  Instance $inum"
+	echo "Series ${snum},  Acquisition ${anum},  Instance ${inum}"
 	
-	if [ $rename -eq 1 ]; then
-		echo RENAMING $f to $targfile
-		mv $f $targfile
+	if [ "$rename" -eq 1 ]; then
+		echo RENAMING "$f" to "$targfile"
+		mv "$f" "$targfile"
 	else
-		echo COPYING $f to $targfile
-		cp $f $targfile
+		echo COPYING "$f" to "$targfile"
+		cp "$f" "$targfile"
 	fi
 	
 done
-rm $tempfile
+rm "$tempfile"
 echo dicomsort Complete

@@ -27,7 +27,7 @@ snumtag='0020,0011'     #series number
 anumtag='0020,0012'     #acquisition number
 inumtag='0020,0013'     #instance number
 nametag='0010,0010'     #patient name
-#idtag='0010,0020'       #patient ID
+idtag='0010,0020'       #patient ID
 pnametag='0018,1030'    #protocol name
 
 usage='Usage: dicomsort [-r] [-d destdir] [-s sourcedir] [-i] [-q] [-n] [-h]'

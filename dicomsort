@@ -2,7 +2,8 @@
 #############
 #This script use the afni programs dicom_hdr and dicom_hinfo to read header information, 
 #reads the information and then renames and sorts the files alphabetically, optionally
-#creating subdirectories for each series.
+#creating subdirectories for each series.  AFNI must be installed locally for 
+#this script to work
 #Written by Michael Worden
 #Updated 02/07/2024 to add support for optionally creating subject and series 
 #subdirectories
@@ -30,8 +31,8 @@ idtag='0010,0020'       #patient ID
 pnametag='0018,1030'    #protocol name
 
 usage='Usage: dicomsort [-r] [-d destdir] [-s sourcedir] [-i] [-q] [-n] [-h]'
-helptxt="dicom sort is a script to sort rename dicom files in alphabetical order according to\n \
-series and slice number."
+helptxt="dicom sort is a script to sort rename dicom files in alphabetical order according to\n\
+series and slice number.  AFNI must be installed on the local computer to use dicomsort."
 
 #process command line options
 while getopts ":rd:s:iqnh" options; do
@@ -44,8 +45,9 @@ while getopts ":rd:s:iqnh" options; do
     n ) recurse=0;;
     h ) echo "$usage";;
     \? ) echo "$usage"
-    	 echo "dicom sort is a script to sort rename dicom files in alphabetical"
-    	 echo "order according to series and slice number.  "
+         echo -e "$helptxt"
+#     	 echo "dicom sort is a script to sort rename dicom files in alphabetical"
+#     	 echo "order according to series and slice number.  "
     	 echo "Options:"
     	 echo "-r: rename files.  Default is to copy."
     	 echo "-d: destination directoroy.  Default is ./renamed ."

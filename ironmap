@@ -23,10 +23,10 @@ while getopts ":i:m:o:avh" options; do
         m ) mask=$OPTARG;;
         o ) output=$OPTARG;;
         a ) normalize=1;;
-        v ) echo $version;; 
-        h ) echo $usage
-            echo $helptext
-            echo $steps
+        v ) echo "$version";; 
+        h ) echo "$usage"
+            echo "$helptext"
+            echo "$steps"
             echo "AFNI MUST BE INSTALLED"
             echo "Options: "
             echo "-i: input one fMRI 3d+time NIFTI file"
@@ -35,8 +35,8 @@ while getopts ":i:m:o:avh" options; do
             echo "-o: output file suffix. Will be attached to the end of the input filename. Default is "ironmap"."
             echo "-a: perform normalization to the average/mean of each volume rather than to the median."
             echo "-h: print this help text";;
-        \? ) echo $usage;;
-        * ) echo $usage
+        \? ) echo "$usage";;
+        * ) echo "$usage"
             exit 1;;
     esac
 done
@@ -49,38 +49,38 @@ do
 
 # Step 1: Normalize the voxels of each volume to the median of the entire volume
 ## If no mask is given: Create a mask using afni 3dAutomask 
-    if [ $mask -eq 0 ]
+    if [ "$mask" -eq 0 ]
         then
             echo "No mask given: Creating a brain mask."
-            3dTstat -mean -prefix ${filebase}_preSS.nii.gz $input
-            3dSkullStrip -input ${filebase}_preSS.nii.gz -prefix ${filebase}_SS.nii.gz
-            3dAutomask -prefix ${filebase}_automask.nii.gz ${filebase}_SS.nii.gz 
-            rm ${filebase}_preSS.nii.gz ${filebase}_SS.nii.gz
+            3dTstat -mean -prefix "${filebase}"_preSS.nii.gz "$input"
+            3dSkullStrip -input "${filebase}"_preSS.nii.gz -prefix "${filebase}"_SS.nii.gz
+            3dAutomask -prefix "${filebase}"_automask.nii.gz "${filebase}"_SS.nii.gz 
+            rm "${filebase}"_preSS.nii.gz "${filebase}"_SS.nii.gz
             mask="${filebase}_automask.nii.gz"
     fi
 ## Take the mean of all voxels per volume
-            3dmaskave -mask ${mask} -quiet ${input} > ${filebase}_volmeans.1D
+            3dmaskave -mask "${mask}" -quiet "${input}" > "${filebase}"_volmeans.1D
             echo "Taking the mean of each volume."
 
 ## Normalize/scale each voxel (per volume) to that median 
     echo "Normalizing each voxel per volume."
-    3dcalc -a ${input} -b ${filebase}_volmeans.1D -expr "(a/b)" -prefix ${filebase}_scaled.nii.gz
+    3dcalc -a "${input}" -b "${filebase}"_volmeans.1D -expr "(a/b)" -prefix "${filebase}"_scaled.nii.gz
 
 # Step 2: Take the median/mean of each voxel across all volumes 
     if [ $normalize -eq 0 ]
         then 
             echo "Taking the median of all volumes."
-            3dTstat -median -mask ${mask} -prefix ${filebase}_scaledavg_$normalize.nii.gz ${filebase}_scaled.nii.gz
+            3dTstat -median -mask "${mask}" -prefix "${filebase}"_scaledavg_$normalize.nii.gz "${filebase}"_scaled.nii.gz
         else
             echo "Taking the mean of all volumes."
-            3dTstat -mean -mask ${mask} -prefix ${filebase}_scaledavg_$normalize.nii.gz ${filebase}_scaled.nii.gz
+            3dTstat -mean -mask "${mask}" -prefix "${filebase}"_scaledavg_$normalize.nii.gz "${filebase}"_scaled.nii.gz
     fi
 
 #Step 3: Take the inverse, 1/nT2*
-    3dcalc -a ${filebase}_scaledavg_$normalize.nii.gz -expr "(1/a)" -prefix ${filebase}_${output}.nii.gz
+    3dcalc -a "${filebase}"_scaledavg_$normalize.nii.gz -expr "(1/a)" -prefix "${filebase}"_"${output}".nii.gz
 
 #Step 4: Remove intermediate files
 echo "Removing intermediate files." 
-rm ${filebase}_volmeans.1D ${filebase}_scaled.nii.gz ${filebase}_scaledavg_$normalize.nii.gz 
+rm "${filebase}"_volmeans.1D "${filebase}"_scaled.nii.gz "${filebase}"_scaledavg_$normalize.nii.gz 
 
 done 

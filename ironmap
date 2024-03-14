@@ -2,6 +2,7 @@
 #This script calls multiple afni commands to generate a one volume NIFTI file, 
 #where each voxel contains a 1/nT2* measurement averaged across time
 #############################
+set -euo pipefail
 
 #Set Variables#
 output="ironmap"

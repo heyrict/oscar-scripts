@@ -7,6 +7,7 @@
 #Written by Michael Worden
 #Updated 02/07/2024 to add support for optionally creating subject and series 
 #subdirectories
+#Updated 03/15/2024 to name subdirectories by Series Description instead of Protocol Name
 #############
 
 set -euo pipefail
@@ -28,7 +29,7 @@ anumtag='0020,0012'     #acquisition number
 inumtag='0020,0013'     #instance number
 nametag='0010,0010'     #patient name
 idtag='0010,0020'       #patient ID
-pnametag='0018,1030'    #protocol name
+sdesctag='0008,103e'    #protocol name
 
 usage='Usage: dicomsort [-r] [-d destdir] [-s sourcedir] [-i] [-q] [-n] [-h]'
 helptxt="dicom sort is a script to sort rename dicom files in alphabetical order according to\n\
@@ -118,7 +119,7 @@ do
 	#should be prepended with a series number in case there are multiple 
 	#series with the same sequence name.
 	if [ "$useseqdir" -eq 1 ]; then
-	    seqdir=$(dicom_hinfo -tag "$pnametag" -no_name "$f")
+	    seqdir=$(dicom_hinfo -tag "$sdesctag" -no_name "$f")
 	    serpre=$(printf "%02.0f_" "$snum")
 	    targdir="$destdir"/"$subdir"/"$serpre$seqdir"
 		mkdir -p "${targdir}"

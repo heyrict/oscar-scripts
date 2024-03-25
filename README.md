@@ -38,3 +38,9 @@ dicomsort
 
 Script that calls the afni program `dicom_hdr` to read header information, reads the information 
 and then renames and sorts the files alphabetically
+
+ironmap
+--------------
+
+ironmap is a script that receives preprocessed 3D+Time fMRI data and outputs one volume,
+where the value of each voxel is the inverse of the normalized T2* measurement. 1/T2* can be used to quantify intracellular iron (ferritin) and is particularly useful in the study of dopaminergic systems in the brain. 

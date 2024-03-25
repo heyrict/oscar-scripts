@@ -3,6 +3,7 @@ import asyncio
 import copy
 from collections import defaultdict
 import datetime
+import difflib
 from enum import Enum
 from getpass import getpass
 import glob
@@ -47,6 +48,7 @@ xnat2bids_params = {
     "sessions": (ParamType.MULTI_VAL, False),
     "skip-export": (ParamType.FLAG_ONLY, False),
     "skipseq": (ParamType.MULTI_VAL, False),
+    "validate_frames": (ParamType.FLAG_ONLY, False),
     "version": (ParamType.PARAM_VAL, False),
     "verbose": (ParamType.MULTI_FLAG, False),
 }
@@ -56,6 +58,11 @@ config_params = {
     "subjects": (ParamType.MULTI_VAL, False),
 }
 
+def suggest_similar(input_value, valid_options):
+    suggestions = difflib.get_close_matches(input_value, valid_options, n=1, cutoff=0.6)
+    return suggestions[0] if suggestions else None
+
+
 def verify_parameters(config):
     config_dict = load(config)
     x2b_params = config_dict['xnat2bids-args']
@@ -63,6 +70,9 @@ def verify_parameters(config):
         if not (k in xnat2bids_params or k in config_params):
             logging.info(f"Invalid parameter in configuration file: {k} ")
             logging.info("Please resolve invalid parameters before running.")
+            suggestion = suggest_similar(k, list(xnat2bids_params.keys()) + list(config_params.keys()))
+            if suggestion:
+                print(f"Did you mean: {suggestion}?")
             exit()
 
 def get_user_credentials():
@@ -109,6 +119,7 @@ def get_project_subject_session(connection, host, session):
     sessionValuesJson = r.json()["ResultSet"]["Result"][0]
     project = sessionValuesJson["project"]
     subjectID = sessionValuesJson["subject_ID"]
+
 
     r = get(
         connection,
@@ -215,6 +226,12 @@ def diff_data_directory(bids_root, user, password):
     connection.verify = True
     connection.auth = (user, password)
 
+    headers = {
+        'Connection': 'close'
+    }
+
+    connection.headers = headers
+
     host = "https://xnat.bnc.brown.edu"
 
     # Gather list of existing PIs in data directory
@@ -259,6 +276,7 @@ def diff_data_directory(bids_root, user, password):
                         missing_sessions.append({'pi': pi, 'study': study, 'subject': subj, 'session': sess, 'ID': session['ID']} )
 
     connection.close()
+    del connection
 
     return missing_sessions
 
@@ -286,6 +304,12 @@ def fetch_requested_sessions(arg_dict, user, password):
     connection.verify = True
     connection.auth = (user, password)
 
+    headers = {
+    'Connection': 'close'
+    }
+
+    connection.headers = headers
+
     host = arg_dict["xnat2bids-args"]["host"]
         
     if 'project' in arg_dict['xnat2bids-args']:
@@ -299,6 +323,7 @@ def fetch_requested_sessions(arg_dict, user, password):
             sessions = extractSessions(get_sessions_from_project(connection, host, project))
 
     connection.close()
+    del connection
 
     if "sessions" in arg_dict['xnat2bids-args']:
         sessions.extend(arg_dict['xnat2bids-args']['sessions'])
@@ -349,6 +374,9 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
         if not (param in xnat2bids_params or param in config_params):
             logging.info(f"Invalid parameter in configuration file: {param}")
             logging.info("Please resolve invalid parameters before running.")
+            suggestion = suggest_similar(k, list(xnat2bids_params.keys()) + list(config_params.keys()))
+            if suggestion:
+                print(f"Did you mean: {suggestion}?")
             exit()
         if value == "" or value is  None:
             continue
@@ -534,6 +562,12 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     connection.verify = True
     connection.auth = (user, password)
 
+    headers = {
+        'Connection': 'close'
+    }
+
+    connection.headers = headers
+
     # Fetch pi and study prefixes for BIDS path
     host = arg_dict["xnat2bids-args"]["host"]
     for session in arg_dict["xnat2bids-args"]["sessions"]:
@@ -548,6 +582,7 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
 
     # Close connection
     connection.close()
+    del connection
     
     # Define bids-validator singularity image path
     simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"

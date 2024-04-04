@@ -10,6 +10,7 @@ import glob
 import logging
 import os
 import pathlib
+import re
 import requests
 import shlex
 import shutil
@@ -482,9 +483,11 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
         xnat2bids_param_list = args[0]
         slurm_param_list = args[1]
         bindings_paths = args[2]
-
+            
         xnat2bids_options = ' '.join(xnat2bids_param_list)
+
         slurm_options = ' '.join(slurm_param_list)
+
 
         # Compile bindings into formated string
         bindings = ' '.join(f"-B {path}" for path in bindings_paths)
@@ -497,9 +500,14 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
             apptainer exec --no-home {bindings} {simg} \
             xnat2bids {xnat2bids_options}\nEOF\n)\''
 
+        # Escape any '$' characters and format to comply with sbatch script syntax
+        sbatch_escaped_script = "$" + sbatch_script[2:-1].replace('$', '\$')
+        formatted_script = f'\'{sbatch_escaped_script}\''
+
         # Process command string for SRUN
         sbatch_cmd = shlex.split(f"sbatch {slurm_options} \
-            --wrap {sbatch_script}")    
+            --wrap {formatted_script}")    
+        
 
         # Set logging level per session verbosity. 
         set_logging_level(xnat2bids_param_list)

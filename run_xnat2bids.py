@@ -37,6 +37,7 @@ xnat2bids_params = {
     "bidsmap-file": (ParamType.PARAM_VAL, True),
     "bids_root": (ParamType.PARAM_VAL, True),
     "cleanup": (ParamType.FLAG_ONLY, False),
+    "dicomfix-config":(ParamType.PARAM_VAL, True),
     "export-only": (ParamType.FLAG_ONLY, False),
     "host": (ParamType.PARAM_VAL, False),
     "includeseq": (ParamType.MULTI_VAL, False),

@@ -39,6 +39,12 @@ dicomsort
 Script that calls the afni program `dicom_hdr` to read header information, reads the information 
 and then renames and sorts the files alphabetically
 
+dicomsort.py
+--------------
+Python implementation of the dicomsort script. This version relies on the python pydicom package,
+rather than AFNI. This is especially useful if you need to sort MR spectroscopy DICOM files,
+which AFNI cannot read.
+
 ironmap
 --------------
 

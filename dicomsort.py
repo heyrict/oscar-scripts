@@ -21,7 +21,7 @@ idtag = '00100020'       # patient ID
 sdesctag = '0008103e'    # protocol name
 
 def parse_arguments():
-    usage = "python dicomsort [-r] [-d destdir] [-s sourcedir] [-i] [-q] [-n]\n\n\
+    usage = "python dicomsort.py [-r] [-d destdir] [-s sourcedir] [-i] [-q] [-n]\n\n\
 options:\n\
     -r: Rename files. Default is to copy.\n\
     -d: Destination directory. Default is ./renamed.\n\

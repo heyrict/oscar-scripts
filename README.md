@@ -33,9 +33,13 @@ singularity-sync
 
 Sbatch script to sync [registered singularity images](https://github.com/brown-bnc/bnc-resource-registry/blob/master/singularity-manifest.yml) into Oscar 
 
+anonymize_dicoms.py
+--------------
+This script copies a directory of DICOMs, making modifications to the DICOM headers as specified 
+in a configuration .csv file
+
 dicomsort
 --------------
-
 Script that calls the afni program `dicom_hdr` to read header information, reads the information 
 and then renames and sorts the files alphabetically
 

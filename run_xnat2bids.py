@@ -13,6 +13,7 @@ import pathlib
 import requests
 import shlex
 import time
+import re
 from toml import load
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.NOTSET)
@@ -165,10 +166,24 @@ def set_logging_level(x2b_arglist: list):
     else:
         logging.getLogger().setLevel(logging.INFO)
 
-def fetch_latest_version():
-    list_of_versions = glob.glob('/gpfs/data/bnc/simgs/brownbnc/*') 
-    latest_version = max(list_of_versions, key=os.path.getctime)
-    return (latest_version.split('-')[-1].replace('.sif', ''))
+def fetch_latest_simg(container_name):
+    list_of_versions = glob.glob(f'/oscar/data/bnc/simgs/*/*{container_name}*') 
+
+    # Regular expression to extract version numbers from filenames
+    version_regex = re.compile(r'(?:v)?(\d+\.\d+\.\d+)\.sif')
+
+    # Dictionary to hold images and their parsed versions
+    image_versions = {}
+
+    for image in list_of_versions:
+        match = version_regex.search(image)
+        if match:
+            image_version = match.group(1)
+            image_versions[image] = tuple(map(int, image_version.split('.')))
+
+    # Find the image with the highest version number
+    most_recent_image = max(image_versions, key=image_versions.get)
+    return most_recent_image
 
 def extract_params(param, value):
     arg = []
@@ -568,7 +583,7 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     connection.close()
     
     # Define bids-validator singularity image path
-    simg=f"/gpfs/data/bnc/simgs/bids/validator-latest.sif"
+    simg=fetch_latest_simg("validator")
 
     for bids_experiment_dir in bids_experiments:
 
@@ -632,8 +647,14 @@ async def main():
     bids_root = f"/users/{user}/bids-export/"
 
     # Initialize version and singularity image for non-local use
-    version = fetch_latest_version()
-    simg=f"/gpfs/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+    try:
+        version = arg_dict['xnat2bids-args']['version']
+        simg=f"/oscar/data/bnc/simgs/brownbnc/xnat-tools-{version}.sif"
+        # we have to delete the argument so that it doesn't get
+        # passed to xnat2bids
+        del arg_dict['xnat2bids-args']['version'] 
+    except KeyError:
+        simg = fetch_latest_simg('xnat-tools')
 
 
     if any(key in arg_dict['xnat2bids-args'] for key in ['project', 'subjects', 'sessions']):

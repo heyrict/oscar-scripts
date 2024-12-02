@@ -7,10 +7,11 @@ set -euo pipefail
 # Set Variables
 output="ironmap"
 normalize=0
+mask=""
 version="Version: 1.0"
-usage="Usage: IronMap.sh [-i input NIFTI file] [-m brain mask] [-o output file suffix, default=ironmap] \
+usage="Usage: ironmap.sh [-i input NIFTI file] [-m brain mask] [-o output file suffix, default=ironmap] \
 [-a take the average/mean of all volumes rather than the median] [-v prints script version] [-h prints help message]"
-helptext="IronMap is a script that receives preprocessed 3D+Time fMRI data and outputs one volume, \
+helptext="Ironmap is a script that receives preprocessed 3D+Time fMRI data and outputs one volume, \
 where each voxel is the inverse of the normalized T2* measurement. It does this by:" \
 steps="1) Normalizing the voxels of each volume to the mean of that volume. \
 2) Taking the median of each voxel across time. \

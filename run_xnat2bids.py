@@ -200,7 +200,7 @@ def extract_params(param, value):
                 for v in expanded_val:
                     arg.append(f"--{param} {v}") 
             else:
-                arg.append(f"--{param} \"{val}\"")
+                arg.append(f"--{param} {val}")
 
     else:
         for v in value:

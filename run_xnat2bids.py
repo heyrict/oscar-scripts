@@ -204,7 +204,7 @@ def extract_params(param, value):
 
     else:
         for v in value:
-            arg.append(f"--{param} {v}")
+            arg.append(f"--{param} \"{v}\"")
 
     return ' '.join(arg)
 
@@ -383,7 +383,7 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
 
         param_type = xnat2bids_params[param][0]
         if param_type == ParamType.PARAM_VAL:
-            arg = f"--{param} {value}"
+            arg = f"--{param} \"{value}\""
             x2b_param_list.append(arg)
         elif param_type == ParamType.MULTI_VAL:
             arg = extract_params(param, value)
@@ -449,7 +449,7 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
 
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
-            output = f"/gpfs/scratch/{user}/logs/%x-{session}-%J.txt"
+            output = f"/oscar/scratch/{user}/logs/%x-{session}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
         else:
@@ -508,40 +508,20 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
         if "--export-only" not in xnat2bids_param_list: needs_validation = True 
 
         # Build shell script for sbatch
-        sbatch_script = f'\'$(cat << EOF #!/bin/sh\n \
-            apptainer exec --no-home {bindings} {simg} \
-            xnat2bids {xnat2bids_options}\nEOF\n)\''
+        sbatch_script = f'""apptainer exec --no-home {bindings} {simg} xnat2bids {xnat2bids_options}""'
 
-        # Escape any '$' characters and format to comply with sbatch script syntax
-        sbatch_escaped_script = "$" + sbatch_script[2:-1].replace('$', '\$')
-        formatted_script = f'\'{sbatch_escaped_script}\''
+        # Escape any '$' characters 
+        sbatch_escaped_script = sbatch_script.replace('$', '\$')
 
         # Process command string for SRUN
-        sbatch_cmd = shlex.split(f"sbatch {slurm_options} \
-            --wrap {formatted_script}")    
-        
+        sbatch_cmd = ['sbatch'] + shlex.split(slurm_options) + ['--wrap', sbatch_escaped_script]
 
         # Set logging level per session verbosity. 
         set_logging_level(xnat2bids_param_list)
 
-        # Remove the password from sbatch command before logging 
-        xnat2bids_options_without_password = []
-        exclude_next_opt = False
-
-        for opt in xnat2bids_options.split():
-            if exclude_next_opt:
-                exclude_next_opt = False
-            elif opt == "--pass":
-                exclude_next_opt = True
-                continue
-            else:
-                xnat2bids_options_without_password.append(opt)
-
-        sbatch_script_without_password = f"apptainer exec --no-home {bindings} {simg} \
-                                            xnat2bids {xnat2bids_options_without_password}"
-
-        sbatch_cmd_without_password = shlex.split(f"sbatch {slurm_options} \
-                                                    --wrap {sbatch_script_without_password}")   
+        # # Remove the password from sbatch command before logging 
+        sbatch_script_without_password = re.sub(r'--pass\s+.*?(?=\s--)', '--pass [REDACTED]', sbatch_escaped_script)
+        sbatch_cmd_without_password = ['sbatch'] + shlex.split(slurm_options) + ['--wrap', sbatch_script_without_password]
 
         logging.debug({
             "message": "Executing xnat2bids",
@@ -588,14 +568,12 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     for bids_experiment_dir in bids_experiments:
 
         # Build shell script for sbatch
-        sbatch_bids_val_script = f"\"$(cat << EOF #!/bin/sh\n \
-            apptainer exec --no-home -B {bids_experiment_dir} {simg} \
-            bids-validator {bids_experiment_dir}\nEOF\n)\""
+        sbatch_bids_val_script = f'""apptainer exec --no-home -B {bids_experiment_dir} {simg} bids-validator {bids_experiment_dir}""'
 
         # Compile list of slurm parameters.
         bids_val_slurm_params = compile_slurm_list(arg_dict, user)
         if not ('output' in arg_dict['slurm-args']):
-            val_output = f"/gpfs/scratch/{user}/logs/%x-%J.txt"
+            val_output = f"/oscar/scratch/{user}/logs/%x-%J.txt"
             arg = f"--output {val_output}"
             bids_val_slurm_params.append(arg)
         else:
@@ -608,13 +586,12 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
         slurm_options = ' '.join(bids_val_slurm_params)
 
         # Process command string for SRUN
-        slurm_options = slurm_options.replace("--job-name xnat2bids", "--job-name bids-validator")
+        slurm_options = slurm_options.replace('--job-name xnat2bids', '--job-name bids-validator')
 
         # Fetch JOB-IDs of xnat2bids jobs to wait upon
         afterok_ids = ":".join(job_deps)
 
-        sbatch_bids_val_cmd = shlex.split(f"sbatch -d afterok:{afterok_ids} {slurm_options} \
-            --wrap {sbatch_bids_val_script}") 
+        sbatch_bids_val_cmd = ['sbatch'] + ['-d'] + [f'afterok:{afterok_ids}'] + shlex.split(slurm_options) + ['--wrap', sbatch_bids_val_script]
 
         # Run bids-validator
         proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)

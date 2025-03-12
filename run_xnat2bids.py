@@ -449,7 +449,8 @@ def assemble_argument_lists(arg_dict, user, password, bids_root, argument_lists=
 
         # Define output for logs
         if not ('output' in arg_dict['slurm-args']):
-            output = f"/oscar/scratch/{user}/logs/%x-{session}-%J.txt"
+            oscar_user = os.environ["USER"]
+            output = f"/oscar/scratch/{oscar_user}/logs/%x-{session}-%J.txt"
             arg = f"--output {output}"
             slurm_param_list.append(arg)
         else:
@@ -573,7 +574,8 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
         # Compile list of slurm parameters.
         bids_val_slurm_params = compile_slurm_list(arg_dict, user)
         if not ('output' in arg_dict['slurm-args']):
-            val_output = f"/oscar/scratch/{user}/logs/%x-%J.txt"
+            oscar_user = os.environ["USER"]
+            val_output = f"/oscar/scratch/{oscar_user}/logs/%x-%J.txt"
             arg = f"--output {val_output}"
             bids_val_slurm_params.append(arg)
         else:

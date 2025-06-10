@@ -389,8 +389,10 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
             arg = extract_params(param, value)
             x2b_param_list.append(arg)
         elif param_type == ParamType.FLAG_ONLY:
-            arg = f"--{param}"
-            x2b_param_list.append(arg)
+            # only add this flag if true in toml
+            if value:
+                arg = f"--{param}"
+                x2b_param_list.append(arg)
         elif param_type == ParamType.MULTI_FLAG:
             arg = f"--{param}"
             for i in range(value):

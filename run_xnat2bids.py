@@ -565,13 +565,13 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     # Close connection
     connection.close()
     
-    # Define bids-validator singularity image path
-    simg=fetch_latest_simg("validator")
+    # Call latest bids-validator from xnat-tools via deno
+    simg=fetch_latest_simg('xnat-tools')
 
     for bids_experiment_dir in bids_experiments:
 
         # Build shell script for sbatch
-        sbatch_bids_val_script = f'""apptainer exec --no-home -B {bids_experiment_dir} {simg} bids-validator {bids_experiment_dir}""'
+        sbatch_bids_val_script = f'""apptainer exec --no-home -B {bids_experiment_dir} {simg} deno run -A jsr:@bids/validator@2.0.7  {bids_experiment_dir}""'
 
         # Compile list of slurm parameters.
         bids_val_slurm_params = compile_slurm_list(arg_dict, user)

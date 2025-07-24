@@ -745,7 +745,7 @@ async def main():
             "We have recently upgraded to the BIDS validator 2.0.\n"
             "\nThis version checks metadata more thoroughly, so it identifies errors that the "
             "legacy validator (https://bids-standard.github.io/legacy-validator/) did not."
-            "\nTo make existing data in this BIDS directory compatible with the new validator,"
+            "\nTo make existing data in this BIDS directory compatible with the new validator, "
             "paste the following into the terminal (on OOD or an interact session):\n\n"
             f"{correct_for_val_cmd}\n\n\n"
             "Then re-run BIDS validation with:\n\n"

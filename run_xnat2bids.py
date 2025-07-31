@@ -529,7 +529,7 @@ async def launch_x2b_jobs(argument_lists, simg, tasks=[], output=[]):
         logging.debug({
             "message": "Executing xnat2bids",
             "session": xnat2bids_param_list[0],
-            "command": sbatch_cmd_without_password
+            "command": shlex.join(sbatch_cmd_without_password)
         })
         
         # Run xnat2bids 
@@ -565,13 +565,24 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
     # Close connection
     connection.close()
     
-    # Define bids-validator singularity image path
-    simg=fetch_latest_simg("validator")
+    # Call latest bids-validator from xnat-tools via deno
+    simg=fetch_latest_simg('xnat-tools')
 
     for bids_experiment_dir in bids_experiments:
 
         # Build shell script for sbatch
-        sbatch_bids_val_script = f'""apptainer exec --no-home -B {bids_experiment_dir} {simg} bids-validator {bids_experiment_dir}""'
+        cmd = [
+            "apptainer", "exec", "--no-home",
+            "-B", f"{bids_experiment_dir}:/bids:ro",
+            "-B", f"/oscar/scratch/{os.environ['USER']}:/scratch",
+            simg,
+            "deno", "run", "-A", "-q", "jsr:@bids/validator", '/bids',
+            ]
+
+        # export DENO_DIR so that deno knows where to cache files in the container
+        sbatch_bids_val_script = (
+            "export DENO_DIR=/scratch/deno; " + shlex.join(cmd)
+        )
 
         # Compile list of slurm parameters.
         bids_val_slurm_params = compile_slurm_list(arg_dict, user)
@@ -597,13 +608,19 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
 
         sbatch_bids_val_cmd = ['sbatch'] + ['-d'] + [f'afterok:{afterok_ids}'] + shlex.split(slurm_options) + ['--wrap', sbatch_bids_val_script]
 
+        logging.debug({
+            "message": "Executing bids validator",
+            "command": shlex.join(sbatch_bids_val_cmd),
+        })
+
+
         # Run bids-validator
         proc = await asyncio.create_subprocess_exec(*sbatch_bids_val_cmd, stdout=asyncio.subprocess.PIPE)
 
         stdout, stderr = await proc.communicate()
         output.append(stdout)
 
-    return output
+    return output,sbatch_bids_val_script
 
 async def main():
     # Instantiate argument parser
@@ -712,7 +729,7 @@ async def main():
 
     # Launch bids-validator
     if needs_validation:
-        validator_output = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
+        validator_output,val_cmd = await launch_bids_validator(arg_dict, user, password, bids_root, x2b_jobs)
         validator_jobs = fetch_job_ids(validator_output)
 
     # Summary Logging 
@@ -722,6 +739,20 @@ async def main():
     if needs_validation:
         logging.info("Launched %d bids-validator %s to check BIDS compliance", len(validator_jobs), "jobs" if len(validator_jobs) > 1 else "job")
         logging.info("Job %s: %s", "IDs" if len(validator_jobs) > 1 else "ID", ' '.join(validator_jobs))
+        correct_for_val_cmd = f"apptainer exec --no-home -B {bids_root}:/bids {simg} python -c 'from xnat_tools.bids_utils import correct_for_bids_schema_validator; correct_for_bids_schema_validator(\"/bids\")'"
+        logging.info(
+            "\n\n***********\n"
+            "We have recently upgraded to the BIDS validator 2.0.\n"
+            "\nThis version checks metadata more thoroughly, so it identifies errors that the "
+            "legacy validator (https://bids-standard.github.io/legacy-validator/) did not."
+            "\nTo make existing data in this BIDS directory compatible with the new validator, "
+            "paste the following into the terminal (on OOD or an interact session):\n\n"
+            f"{correct_for_val_cmd}\n\n\n"
+            "Then re-run BIDS validation with:\n\n"
+            f"{val_cmd}\n\n"
+            "Please contact cobre-bnc@brown.edu with any issues!\n"
+            "***********\n\n"
+        )
 
     logging.info("Processed Scans Located At: %s", bids_root)
 

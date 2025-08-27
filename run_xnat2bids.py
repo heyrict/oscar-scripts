@@ -576,7 +576,7 @@ async def launch_bids_validator(arg_dict, user, password, bids_root, job_deps):
             "-B", f"{bids_experiment_dir}:/bids:ro",
             "-B", f"/oscar/scratch/{os.environ['USER']}:/scratch",
             simg,
-            "deno", "run", "-A", "-q", "jsr:@bids/validator", '/bids',
+            "deno", "run", "-A", "-qr", "jsr:@bids/validator", '/bids',
             ]
 
         # export DENO_DIR so that deno knows where to cache files in the container

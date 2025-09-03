@@ -73,6 +73,28 @@ def verify_parameters(config):
                 print(f"Did you mean: {suggestion}?")
             exit()
 
+    # detect duplicate subjects or sessions
+    for param in ['subjects','sessions']:
+        if param in x2b_params.keys():
+            duplicates = [item for item in set(x2b_params[param]) if x2b_params[param].count(item) > 1]
+            if duplicates:
+                logging.info(f"Detected duplicate subjects or sessions: {duplicates}")
+                logging.info("Please resolve before running.")
+                exit()
+
+    # if subjects are specified, project must also be specified
+    if 'subjects' in x2b_params.keys():
+        if 'project' not in x2b_params.keys():
+            logging.info("Subjects listed in configuration file, but project not specified.")
+            logging.info("Please add project=PROJECT_NAME to your configuration file")
+            exit()
+    
+    # allow project+subject or sessions, but not both at the same time
+    if 'subjects' in x2b_params.keys() and 'sessions' in x2b_params.keys():
+        logging.info("Both subjects and sessions are defined in configuration file.")
+        logging.info("Please specify with either (project & subject) OR session (XNAT Accession #)")
+        exit()
+
 def get_user_credentials():
     user = input('Enter XNAT Username: ')
     password = getpass('Enter Password: ')

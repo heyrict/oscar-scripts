@@ -66,8 +66,8 @@ def verify_parameters(config):
     x2b_params = config_dict['xnat2bids-args']
     for k, v in x2b_params.items():
         if not (k in xnat2bids_params or k in config_params):
-            logging.info(f"Invalid parameter in configuration file: {k} ")
-            logging.info("Please resolve invalid parameters before running.")
+            logging.error(f"Invalid parameter in configuration file: {k} ")
+            logging.error("Please resolve invalid parameters before running.")
             suggestion = suggest_similar(k, list(xnat2bids_params.keys()) + list(config_params.keys()))
             if suggestion:
                 print(f"Did you mean: {suggestion}?")
@@ -78,21 +78,21 @@ def verify_parameters(config):
         if param in x2b_params.keys():
             duplicates = [item for item in set(x2b_params[param]) if x2b_params[param].count(item) > 1]
             if duplicates:
-                logging.info(f"Detected duplicate subjects or sessions: {duplicates}")
-                logging.info("Please resolve before running.")
+                logging.error(f"Detected duplicate subjects or sessions: {duplicates}")
+                logging.error("Please resolve before running.")
                 exit()
 
     # if subjects are specified, project must also be specified
     if 'subjects' in x2b_params.keys():
         if 'project' not in x2b_params.keys():
-            logging.info("Subjects listed in configuration file, but project not specified.")
-            logging.info("Please add project=PROJECT_NAME to your configuration file")
+            logging.error("Subjects listed in configuration file, but project not specified.")
+            logging.error('Please add project="PROJECT_NAME" to your configuration file')
             exit()
     
     # allow project+subject or sessions, but not both at the same time
     if 'subjects' in x2b_params.keys() and 'sessions' in x2b_params.keys():
-        logging.info("Both subjects and sessions are defined in configuration file.")
-        logging.info("Please specify with either (project & subject) OR session (XNAT Accession #)")
+        logging.error("Both subjects and sessions are defined in configuration file.")
+        logging.error("Please specify with either (project & subject) OR session (XNAT Accession #)")
         exit()
 
 def get_user_credentials():
@@ -392,8 +392,8 @@ def parse_x2b_params(xnat2bids_dict, session, bindings):
 
     for param, value in xnat2bids_dict.items():
         if not (param in xnat2bids_params or param in config_params):
-            logging.info(f"Invalid parameter in configuration file: {param}")
-            logging.info("Please resolve invalid parameters before running.")
+            logging.error(f"Invalid parameter in configuration file: {param}")
+            logging.error("Please resolve invalid parameters before running.")
             suggestion = suggest_similar(k, list(xnat2bids_params.keys()) + list(config_params.keys()))
             if suggestion:
                 print(f"Did you mean: {suggestion}?")

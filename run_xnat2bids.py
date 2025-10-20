@@ -94,6 +94,10 @@ def verify_parameters(config):
         logging.error("Both subjects and sessions are defined in configuration file.")
         logging.error("Please specify with either (project & subject) OR session (XNAT Accession #)")
         exit()
+    elif 'project' in x2b_params.keys() and 'sessions' in x2b_params.keys():
+        logging.error("Both project and sessions are defined in configuration file.")
+        logging.error("Please specify with either (project & subject) OR session (XNAT Accession #)")
+        exit()
 
 def get_user_credentials():
     user = input('Enter XNAT Username: ')
